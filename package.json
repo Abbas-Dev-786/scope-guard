@@ -1,0 +1,17 @@
+{
+  "name": "scopeguard",
+  "private": true,
+  "packageManager": "pnpm@10.6.1",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @scopeguard/web dev",
+    "build": "pnpm --filter @scopeguard/web build",
+    "lint": "pnpm --filter @scopeguard/web lint",
+    "typecheck": "pnpm --filter @scopeguard/web typecheck",
+    "test": "uv run pytest",
+    "api": "uv run uvicorn services.api.app:app --reload --port 8000",
+    "contracts:generate": "uv run python scripts/export_openapi.py && apps\\web\\node_modules\\.bin\\openapi-typescript.cmd packages\\shared-schemas\\openapi.json -o apps\\web\\lib\\generated\\api.d.ts"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "One communication contains two independent requests and must remain associated with both request records.",
+  "communication_id": "comm-001",
+  "request_keys": [
+    "REQ-001",
+    "REQ-002"
+  ]
+}

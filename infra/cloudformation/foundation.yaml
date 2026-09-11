@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ScopeGuard Phase 00 account-independent foundation
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues: [development, test]
+    Default: development
+  EvidenceBucketName:
+    Type: String
+  CallbackUrl:
+    Type: String
+  LogoutUrl:
+    Type: String
+  EnableAdminTestAuth:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  AdminTestAuthEnabled: !Equals [!Ref EnableAdminTestAuth, 'true']
+
+Resources:
+  DataKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: ScopeGuard application data key
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: CloudWatchLogsEncryption
+            Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.${AWS::URLSuffix}
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/scopeguard/${EnvironmentName}/operations
+  DataKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/scopeguard-${EnvironmentName}
+      TargetKeyId: !Ref DataKey
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref EvidenceBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt DataKey.Arn
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub ${EvidenceBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub scopeguard-${EnvironmentName}
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+      DeletionProtection: ACTIVE
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+      UserPoolAddOns:
+        AdvancedSecurityMode: ENFORCED
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub scopeguard-web-${EnvironmentName}
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      ExplicitAuthFlows: !If
+        - AdminTestAuthEnabled
+        - [ALLOW_ADMIN_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH, ALLOW_USER_SRP_AUTH]
+        - [ALLOW_REFRESH_TOKEN_AUTH, ALLOW_USER_SRP_AUTH]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs: [!Ref CallbackUrl]
+      LogoutURLs: [!Ref LogoutUrl]
+      SupportedIdentityProviders: [COGNITO]
+  Domain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub scopeguard-${AWS::AccountId}-${EnvironmentName}
+      UserPoolId: !Ref UserPool
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub scopeguard-${EnvironmentName}
+  OperationsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /scopeguard/${EnvironmentName}/operations
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt DataKey.Arn
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  UserPoolDomain:
+    Value: !Sub https://${Domain}.auth.${AWS::Region}.${AWS::URLSuffix}
+  UserPoolIssuer:
+    Value: !Sub https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+  EventBusName:
+    Value: !Ref EventBus
+  DataKeyArn:
+    Value: !GetAtt DataKey.Arn

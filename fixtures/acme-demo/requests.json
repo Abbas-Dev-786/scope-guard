@@ -1,0 +1,14 @@
+[
+  {
+    "request_key": "REQ-001",
+    "summary": "Add CSV export to reporting view",
+    "thread": "acme-reporting",
+    "source_version": "sow-v1"
+  },
+  {
+    "request_key": "REQ-002",
+    "summary": "Schedule handover and training",
+    "thread": "acme-handover",
+    "source_version": "sow-v1"
+  }
+]

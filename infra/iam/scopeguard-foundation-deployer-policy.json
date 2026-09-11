@@ -1,0 +1,144 @@
+{
+    "Version":  "2012-10-17",
+    "Statement":  [
+                      {
+                          "Sid":  "IdentityCheck",
+                          "Effect":  "Allow",
+                          "Action":  "sts:GetCallerIdentity",
+                          "Resource":  "*"
+                      },
+                      {
+                          "Sid":  "FoundationStackOperations",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "cloudformation:ContinueUpdateRollback",
+                                         "cloudformation:DeleteStack",
+                                         "cloudformation:CreateChangeSet",
+                                         "cloudformation:CreateStack",
+                                         "cloudformation:DescribeChangeSet",
+                                         "cloudformation:DescribeStackEvents",
+                                         "cloudformation:DescribeStacks",
+                                         "cloudformation:ExecuteChangeSet",
+                                         "cloudformation:GetStackPolicy",
+                                         "cloudformation:GetTemplate",
+                                         "cloudformation:ListStackResources",
+                                         "cloudformation:ListStacks",
+                                         "cloudformation:UpdateStack",
+                                         "cloudformation:ValidateTemplate"
+                                     ],
+                          "Resource":  "*",
+                          "Condition":  {
+                                            "StringEquals":  {
+                                                                 "aws:RequestedRegion":  "us-east-1"
+                                                             }
+                                        }
+                      },
+                      {
+                          "Sid":  "CognitoFoundation",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "cognito-idp:CreateUserPool",
+                                         "cognito-idp:UpdateUserPool",
+                                         "cognito-idp:DescribeUserPool",
+                                         "cognito-idp:CreateUserPoolClient",
+                                         "cognito-idp:UpdateUserPoolClient",
+                                         "cognito-idp:DescribeUserPoolClient",
+                                         "cognito-idp:CreateUserPoolDomain",
+                                         "cognito-idp:DescribeUserPoolDomain",
+                                         "cognito-idp:TagResource",
+                                         "cognito-idp:UntagResource",
+                                         "cognito-idp:SetUserPoolMfaConfig",
+                                         "cognito-idp:DeleteUserPool",
+                                         "cognito-idp:DeleteUserPoolClient",
+                                         "cognito-idp:DeleteUserPoolDomain"
+                                     ],
+                          "Resource":  "*",
+                          "Condition":  {
+                                            "StringEquals":  {
+                                                                 "aws:RequestedRegion":  "us-east-1"
+                                                             }
+                                        }
+                      },
+                      {
+                          "Sid":  "EvidenceBucketFoundation",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "s3:CreateBucket",
+                                         "s3:GetBucketLocation",
+                                         "s3:GetBucketVersioning",
+                                         "s3:PutBucketVersioning",
+                                         "s3:GetBucketPublicAccessBlock",
+                                         "s3:PutBucketPublicAccessBlock",
+                                         "s3:GetBucketPolicy",
+                                         "s3:PutBucketPolicy",
+                                         "s3:GetBucketTagging",
+                                         "s3:PutBucketTagging",
+                                         "s3:GetLifecycleConfiguration",
+                                         "s3:PutLifecycleConfiguration",
+                                         "s3:PutEncryptionConfiguration",
+                                         "s3:GetEncryptionConfiguration"
+                                     ],
+                          "Resource":  "*"
+                      },
+                      {
+                          "Sid":  "DataKeyFoundation",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "kms:CreateKey",
+                                         "kms:DescribeKey",
+                                         "kms:EnableKeyRotation",
+                                         "kms:PutKeyPolicy",
+                                         "kms:CreateAlias",
+                                         "kms:UpdateAlias",
+                                         "kms:ListAliases",
+                                         "kms:TagResource",
+                                         "kms:UntagResource",
+                                         "kms:ScheduleKeyDeletion",
+                                         "kms:CancelKeyDeletion",
+                                         "kms:DeleteAlias"
+                                     ],
+                          "Resource":  "*",
+                          "Condition":  {
+                                            "StringEquals":  {
+                                                                 "aws:RequestedRegion":  "us-east-1"
+                                                             }
+                                        }
+                      },
+                      {
+                          "Sid":  "EventBusFoundation",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "events:CreateEventBus",
+                                         "events:DescribeEventBus",
+                                         "events:TagResource",
+                                         "events:UntagResource",
+                                         "events:DeleteEventBus"
+                                     ],
+                          "Resource":  "*",
+                          "Condition":  {
+                                            "StringEquals":  {
+                                                                 "aws:RequestedRegion":  "us-east-1"
+                                                             }
+                                        }
+                      },
+                      {
+                          "Sid":  "OperationsLogFoundation",
+                          "Effect":  "Allow",
+                          "Action":  [
+                                         "logs:CreateLogGroup",
+                                         "logs:DescribeLogGroups",
+                                         "logs:PutRetentionPolicy",
+                                         "logs:AssociateKmsKey",
+                                         "logs:TagResource",
+                                         "logs:UntagResource",
+                                         "logs:DeleteLogGroup"
+                                     ],
+                          "Resource":  "*",
+                          "Condition":  {
+                                            "StringEquals":  {
+                                                                 "aws:RequestedRegion":  "us-east-1"
+                                                             }
+                                        }
+                      }
+                  ]
+}

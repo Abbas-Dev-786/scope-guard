@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.6-alpine
+        env:
+          POSTGRES_DB: scopeguard
+          POSTGRES_USER: scopeguard
+          POSTGRES_PASSWORD: scopeguard
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scopeguard -d scopeguard"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SCOPEGUARD_DATABASE_URL: postgresql+psycopg://scopeguard:scopeguard@localhost:5432/scopeguard
+      RUN_POSTGRES_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.31"
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.6.1"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          cache: pnpm
+      - run: uv sync --locked --dev
+      - run: pnpm install --frozen-lockfile
+      - run: uv run alembic upgrade head
+      - run: uv run ruff check services scripts migrations tests
+      - run: uv run pytest
+      - run: pnpm contracts:generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build

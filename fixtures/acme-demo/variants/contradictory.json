@@ -1,0 +1,13 @@
+{
+  "description": "A later source contradicts the original hosting exclusion; the system must retain both source versions and require human confirmation.",
+  "sources": [
+    {
+      "version": "sow-v1",
+      "statement": "Production hosting remains with Acme."
+    },
+    {
+      "version": "sow-v2",
+      "statement": "Provider will operate production hosting."
+    }
+  ]
+}

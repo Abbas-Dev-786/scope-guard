@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS analysis_budget_reservations;
+DROP TABLE IF EXISTS analysis_budget_windows;
+DROP TABLE IF EXISTS scope_assessments;
+DROP TABLE IF EXISTS agent_runs;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS row_version;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS correlation_id;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS policy_version;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS current_phase;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS preference_version_id;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS scope_version_id;
+ALTER TABLE workflow_instances DROP COLUMN IF EXISTS request_id;

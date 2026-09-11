@@ -1,0 +1,11 @@
+FROM ghcr.io/astral-sh/uv:0.11.31 AS uv
+FROM public.ecr.aws/lambda/python:3.11
+COPY --from=uv /uv /bin/uv
+WORKDIR ${LAMBDA_TASK_ROOT}
+COPY pyproject.toml uv.lock README.md ./
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
+RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
+    && uv pip install --system --no-cache -r requirements.txt
+COPY services ./services
+CMD ["services.api.app.handler"]

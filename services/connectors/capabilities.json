@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "default_policy": "deny",
+  "providers": {
+    "gmail": {
+      "read": ["messages.get", "messages.list", "threads.get", "history.list", "watch.start", "watch.stop"],
+      "deterministic_actions": ["messages.send"],
+      "agent_actions": []
+    },
+    "razorpay": {
+      "read": ["payment_links.fetch", "payments.fetch"],
+      "deterministic_actions": ["payment_links.create"],
+      "agent_actions": []
+    },
+    "ses": {
+      "read": [],
+      "deterministic_actions": ["email.send_verified_notification"],
+      "agent_actions": []
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Two active bindings point the same provider thread at different projects; routing must open a decision.",
+  "provider": "fixture",
+  "resource_type": "thread",
+  "resource_id": "acme-shared-thread",
+  "candidate_projects": [
+    "project-alpha",
+    "project-beta"
+  ]
+}

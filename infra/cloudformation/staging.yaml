@@ -1,0 +1,421 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ScopeGuard full staging stack: private Aurora, RDS Proxy, VPC Lambda API, and HTTP API.'
+
+Parameters:
+  ImageUri:
+    Type: String
+  AppSecretArn:
+    Type: String
+  EnvironmentName:
+    Type: String
+    Default: staging
+    AllowedValues: [staging]
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+  DatabaseName:
+    Type: String
+    Default: scopeguard
+  DatabaseUsername:
+    Type: String
+    Default: scopeguard
+  AuroraEngineVersion:
+    Type: String
+    Default: '17.7'
+  CognitoUserPoolId:
+    Type: String
+    Default: us-east-1_B14OYNOU6
+  CognitoClientId:
+    Type: String
+    Default: 34e5mk01lk0itt0vpr46p5rgj4
+  EvidenceBucketName:
+    Type: String
+    Default: scopeguard-359465684083-development-us-east-1-v2
+  DataKeyArn:
+    Type: String
+    Default: arn:aws:kms:us-east-1:359465684083:key/replace-with-foundation-key
+  GmailRedirectUri:
+    Type: String
+    Default: http://localhost:3000/api/v1/integrations/gmail/callback
+  DeploymentRevision:
+    Type: String
+    Default: '1'
+  ClientReviewBaseUrl:
+    Type: String
+    Default: http://localhost:3000
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub scopeguard-${EnvironmentName}-vpc
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.42.0.0/20
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.42.16.0/20
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.42.32.0/20
+      AvailabilityZone: !Select [0, !GetAZs '']
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.42.48.0/20
+      AvailabilityZone: !Select [1, !GetAZs '']
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  NatEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+  PrivateSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ScopeGuard staging Lambda egress
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+  ProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ScopeGuard staging RDS Proxy egress
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ScopeGuard staging Aurora ingress from proxy
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ProxySecurityGroup
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: ScopeGuard staging private database subnets
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: scopeguard/staging/database-v4
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username":"${DatabaseUsername}"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\\'
+  DatabaseCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: !Ref AuroraEngineVersion
+      DatabaseName: !Ref DatabaseName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VpcSecurityGroupIds: [!Ref DatabaseSecurityGroup]
+      StorageEncrypted: true
+      KmsKeyId: !Ref DataKeyArn
+      BackupRetentionPeriod: 1
+      CopyTagsToSnapshot: true
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 2
+  DatabaseInstanceA:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref DatabaseCluster
+      DBInstanceClass: db.serverless
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: false
+  DatabaseInstanceB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref DatabaseCluster
+      DBInstanceClass: db.serverless
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: false
+  ProxyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadDatabaseSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecret
+  DatabaseProxy:
+    Type: AWS::RDS::DBProxy
+    DependsOn: DatabaseInstanceB
+    Properties:
+      DBProxyName: scopeguard-staging-proxy
+      EngineFamily: POSTGRESQL
+      Auth:
+        - AuthScheme: SECRETS
+          SecretArn: !Ref DatabaseSecret
+          IAMAuth: DISABLED
+      RoleArn: !GetAtt ProxyRole.Arn
+      VpcSubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      VpcSecurityGroupIds: [!Ref ProxySecurityGroup]
+      RequireTLS: true
+      IdleClientTimeout: 1800
+  DatabaseProxyTargetGroup:
+    Type: AWS::RDS::DBProxyTargetGroup
+    DependsOn: DatabaseProxy
+    Properties:
+      DBProxyName: !Ref DatabaseProxy
+      TargetGroupName: default
+      DBClusterIdentifiers: [!Ref DatabaseCluster]
+      ConnectionPoolConfigurationInfo:
+        MaxConnectionsPercent: 80
+        MaxIdleConnectionsPercent: 40
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ScopeGuardRuntime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ec2:CreateNetworkInterface, ec2:DescribeNetworkInterfaces, ec2:DeleteNetworkInterface, ec2:AssignPrivateIpAddresses, ec2:UnassignPrivateIpAddresses]
+                Resource: '*'
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:HeadObject]
+                Resource: !Sub arn:${AWS::Partition}:s3:::${EvidenceBucketName}/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${EvidenceBucketName}
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
+                Resource: !Ref DataKeyArn
+              - Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: '*'
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: '*'
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: '*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecretArn
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DatabaseProxyTargetGroup
+    Properties:
+      FunctionName: scopeguard-staging-api
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImageUri
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 1024
+      Timeout: 30
+      VpcConfig:
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      Environment:
+        Variables:
+          SCOPEGUARD_ENVIRONMENT: !Ref EnvironmentName
+          SCOPEGUARD_DEPLOYMENT_REVISION: !Ref DeploymentRevision
+          SCOPEGUARD_AWS_REGION: !Ref AWS::Region
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+          SCOPEGUARD_COGNITO_REGION: !Ref AWS::Region
+          SCOPEGUARD_COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          SCOPEGUARD_COGNITO_CLIENT_ID: !Ref CognitoClientId
+          SCOPEGUARD_ALLOW_DEV_AUTH: 'false'
+          SCOPEGUARD_CONTRACT_OBJECT_BUCKET: !Ref EvidenceBucketName
+          SCOPEGUARD_CONTRACT_OBJECT_KMS_KEY_ARN: !Ref DataKeyArn
+          SCOPEGUARD_BEDROCK_MODEL_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:bedrock_model_id}}'
+          SCOPEGUARD_CAPABILITY_ENCRYPTION_KEY: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:capability_encryption_key}}'
+          SCOPEGUARD_GMAIL_CLIENT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_id}}'
+          SCOPEGUARD_GMAIL_CLIENT_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_secret}}'
+          SCOPEGUARD_GMAIL_REDIRECT_URI: !Ref GmailRedirectUri
+          SCOPEGUARD_GMAIL_PUSH_VERIFICATION_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_push_verification_secret}}'
+          SCOPEGUARD_GMAIL_PUBSUB_TOPIC: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_pubsub_topic}}'
+          SCOPEGUARD_CLIENT_REVIEW_BASE_URL: !Ref ClientReviewBaseUrl
+          SCOPEGUARD_SES_CONFIGURATION_SET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_configuration_set}}'
+          SCOPEGUARD_SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_from_email}}'
+  MigrationFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DatabaseProxyTargetGroup
+    Properties:
+      FunctionName: scopeguard-staging-migrations
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImageUri
+      ImageConfig:
+        Command: [services.api.migrate.handler]
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 1024
+      Timeout: 900
+      VpcConfig:
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      Environment:
+        Variables:
+          SCOPEGUARD_ENVIRONMENT: !Ref EnvironmentName
+          SCOPEGUARD_DEPLOYMENT_REVISION: !Ref DeploymentRevision
+          SCOPEGUARD_AWS_REGION: !Ref AWS::Region
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: scopeguard-staging-http-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: [!Ref ClientReviewBaseUrl]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type, X-Request-Id]
+        MaxAge: 300
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: '$default'
+      Target: !Sub integrations/${ApiIntegration}
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  GmailCallbackUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api/v1/integrations/gmail/callback
+  ApiFunctionName:
+    Value: !Ref ApiFunction
+  MigrationFunctionName:
+    Value: !Ref MigrationFunction
+  DatabaseProxyEndpoint:
+    Value: !GetAtt DatabaseProxy.Endpoint
+  DatabaseSecretArn:
+    Value: !Ref DatabaseSecret
+  VpcId:
+    Value: !Ref VPC

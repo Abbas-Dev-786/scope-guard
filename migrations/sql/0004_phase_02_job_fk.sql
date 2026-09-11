@@ -1,0 +1,2 @@
+ALTER TABLE workflow_instances DROP CONSTRAINT IF EXISTS fk_workflows_job_owner;
+ALTER TABLE workflow_instances ADD CONSTRAINT fk_workflows_job_owner FOREIGN KEY (tenant_id, current_job_id) REFERENCES jobs(tenant_id, id) ON DELETE RESTRICT;

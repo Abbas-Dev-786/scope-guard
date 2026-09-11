@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS routing_decisions, evidence_references, evidence_bundles, request_communications, request_records, communication_events, external_events, integration_bindings, scope_amendments, scope_version_items, scope_items, scope_versions, scope_candidates, document_chunks, document_upload_grants, contract_documents CASCADE;

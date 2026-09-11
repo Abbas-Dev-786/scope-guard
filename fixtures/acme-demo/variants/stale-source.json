@@ -1,0 +1,6 @@
+{
+  "description": "An evidence reference points at a superseded source version and must not silently become the current baseline.",
+  "source_version": "sow-v0",
+  "current_source_version": "sow-v1",
+  "content_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

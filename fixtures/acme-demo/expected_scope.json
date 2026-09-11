@@ -1,0 +1,36 @@
+{
+  "source_document": "sow.md",
+  "source_version": "sow-v1",
+  "items": [
+    {
+      "item_key": "portal-dashboard",
+      "item_type": "INCLUDED",
+      "text": "Configure the customer portal and dashboard."
+    },
+    {
+      "item_key": "csv-export",
+      "item_type": "INCLUDED",
+      "text": "Implement CSV export for the reporting view."
+    },
+    {
+      "item_key": "handover-training",
+      "item_type": "INCLUDED",
+      "text": "Provide a written handover and one remote training session."
+    },
+    {
+      "item_key": "hosting-operations",
+      "item_type": "EXCLUDED",
+      "text": "Production hosting, infrastructure operations and 24-hour support remain with Acme."
+    },
+    {
+      "item_key": "third-party-licenses",
+      "item_type": "EXCLUDED",
+      "text": "Paid third-party licenses are not included."
+    },
+    {
+      "item_key": "fixed-fee",
+      "item_type": "COMMERCIAL",
+      "text": "The fixed implementation fee is INR 15000, payable on acceptance of the confirmed baseline."
+    }
+  ]
+}
