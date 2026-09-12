@@ -68,3 +68,21 @@ def test_private_object_fetch_verifies_headers(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(ObjectStoreVerificationError, match="size"):
         fetch_private_object(object_key="contracts/a.txt", expected_size_bytes=4, expected_mime_type="text/plain")
+
+def test_structure_provider_falls_back_to_exact_source_list_spans() -> None:
+    source = "## Included scope\n\n- Configure portal.\n\n## Excluded scope\n\n- Hosting is excluded.\n"
+    chunk = SimpleNamespace(id=uuid4(), start_offset=0, end_offset=len(source), source_text=source)
+
+    class ParaphrasingProvider:
+        extractor_version = "fixture:paraphrasing"
+
+        def extract(self, chunks: list[object]) -> list[dict[str, object]]:
+            return [{"item_key": "bad", "item_type": "included", "text": "A paraphrase", "source_chunk_id": chunk.id, "start_offset": 0, "end_offset": 12}]
+
+    result = extract_scope_candidates(ParaphrasingProvider(), [chunk])
+    assert result.status == "READY"
+    assert result.reason == "fixture:paraphrasing:source-span-fallback"
+    assert [(item.item_type, item.text) for item in result.candidates] == [
+        ("included", "Configure portal."),
+        ("excluded", "Hosting is excluded."),
+    ]

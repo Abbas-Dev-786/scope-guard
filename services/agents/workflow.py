@@ -116,11 +116,13 @@ def prepare_analysis(
     request = session.scalar(select(RequestRecord).where(RequestRecord.id == request_id, RequestRecord.tenant_id == context.tenant_id, RequestRecord.project_id == project_id))
     if request is None:
         raise NotFoundError("Request was not found")
+    workflow_snapshot = dict(input_snapshot)
+    workflow_snapshot.pop("evidence_reference_ids", None)
     workflow = create_workflow(
         session,
         context,
         workflow_key=workflow_key or f"request:{request_id}:v{request.request_version}",
-        input_snapshot=input_snapshot,
+        input_snapshot=workflow_snapshot,
         project_id=project_id,
         request_id=request.id,
         policy_version=policy_version,

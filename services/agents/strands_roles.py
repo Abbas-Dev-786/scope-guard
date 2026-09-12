@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -55,22 +56,70 @@ class StrandsRoleRunner:
         limits: AnalysisLimits,
         repair_prompt: str | None = None,
     ) -> StrandsRoleResult:
-        async def call(text: str) -> Any:
-            return await asyncio.wait_for(
-                self.agent.invoke_async(text, structured_output_model=schema),
-                timeout=MAX_NODE_SECONDS,
-            )
+        async def call(text: str, *, structured: bool = True) -> Any:
+            if structured:
+                request = self.agent.invoke_async(text, structured_output_model=schema)
+            else:
+                request = self.agent.invoke_async(
+                    text + "\nReturn only a single valid JSON object matching the requested schema.",
+                )
+            return await asyncio.wait_for(request, timeout=MAX_NODE_SECONDS)
+
+        def parse_plain(result: Any) -> BaseModel | None:
+            value = getattr(result, "output", None)
+            if value is None:
+                message = getattr(result, "message", None)
+                content = message.get("content") if isinstance(message, dict) else None
+                if isinstance(content, list):
+                    value = "".join(
+                        str(block.get("text", ""))
+                        for block in content
+                        if isinstance(block, dict) and isinstance(block.get("text"), str)
+                    )
+            if isinstance(value, BaseModel):
+                return value if isinstance(value, schema) else None
+            if not isinstance(value, str):
+                return None
+            candidate = value.strip()
+            if candidate.startswith(chr(96)):
+                candidate = candidate.split("\n", 1)[-1].rsplit(chr(96) + chr(96) + chr(96), 1)[0].strip()
+            decoder = json.JSONDecoder()
+            try:
+                return schema.model_validate_json(candidate)
+            except Exception:
+                pass
+            for index, character in enumerate(candidate):
+                if character != "{":
+                    continue
+                try:
+                    value, _ = decoder.raw_decode(candidate[index:])
+                    return schema.model_validate(value)
+                except Exception:
+                    continue
+            return None
 
         limits.check_deadline()
-        result = await call(prompt)
-        output = getattr(result, "structured_output", None)
+        result = None
+        output = None
         repaired = False
+        try:
+            # Prefer native structured output: it avoids the extra plain-JSON and
+            # strict-retry calls that can exhaust the per-analysis input budget.
+            result = await call(prompt)
+            output = getattr(result, "structured_output", None) or parse_plain(result)
+        except Exception as exc:
+            if "ValidationException" not in type(exc).__name__ and "ValidationException" not in str(exc):
+                raise
+
+        if output is None:
+            result = await call(prompt, structured=False)
+            output = parse_plain(result)
         if output is None:
             if repair_prompt is None:
                 raise ConflictError("Role returned no structured output")
             limits.record_repair()
             result = await call(repair_prompt)
-            output = getattr(result, "structured_output", None)
+            output = getattr(result, "structured_output", None) or parse_plain(result)
             repaired = True
         if not isinstance(output, schema):
             raise ConflictError("Role structured output failed schema validation")

@@ -127,19 +127,20 @@ def test_mapping_resolution_replays_original_event_and_evidence_is_snapshot_boun
         search_contract_chunks,
     )
     from services.contracts.service import resolve_routing_decision
-    from services.domain.models import EvidenceReference, IntegrationBinding, RoutingDecision
+    from services.domain.models import EvidenceReference, RoutingDecision
 
     context, factory = context_and_factory
     with factory.begin() as session:
         project = session.scalar(select(Project).where(Project.tenant_id == TENANT))
         event = ingest_external_event(session, context, provider="fixture", environment="test", provider_event_id="delivery-resolve", payload_hash="b" * 64, occurred_at=datetime.now(UTC))
-        decision = route_external_event(session, context, external_event_id=event.id, resource_type="message", resource_id="msg-1", source_version="v1", content_ref="fixture://msg-1", occurred_at=datetime.now(UTC))
+        decision = route_external_event(session, context, external_event_id=event.id, resource_type="message", resource_id="msg-1", source_version="v1", content_ref="fixture://msg-1", occurred_at=datetime.now(UTC), sender="client@example.com", thread_id="thread-unmapped")
         assert isinstance(decision, RoutingDecision)
-        decision.candidate_projects = [str(project.id)]
-        session.add(IntegrationBinding(tenant_id=TENANT, project_id=project.id, provider="fixture", resource_type="message", resource_id="msg-1"))
-        session.flush()
         communication = resolve_routing_decision(session, context, decision_id=decision.id, project_id=project.id, actor="operator")
         assert communication.project_id == project.id
+        assert communication.sender == "client@example.com"
+        from services.domain.models import ThreadAssignment
+        assignment = session.scalar(select(ThreadAssignment).where(ThreadAssignment.thread_id == "thread-unmapped"))
+        assert assignment is not None and assignment.project_id == project.id
         bundle = create_evidence_bundle(session, context, project_id=project.id, request_id=None, searched_sources=[{"source": "contract", "coverage": "COMPLETE"}], completeness="COMPLETE")
         add_evidence_reference(session, context, bundle_id=bundle.id, source_type="document_chunk", source_id="chunk-1", source_version="v1", exact_excerpt_ref="object://excerpt", content_hash="c" * 64, locator={"page": 1}, access_scope="tenant", relation="SUPPORTS")
         assert session.scalar(select(EvidenceReference).where(EvidenceReference.bundle_id == bundle.id)) is not None

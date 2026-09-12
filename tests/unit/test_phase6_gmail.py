@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from services.domain.auth import TrustedContext
 from services.domain.errors import ValidationError
-from services.domain.models import Base, IntegrationConnection, MailboxSync, User
+from services.domain.models import Base, IntegrationConnection, Job, MailboxSync, User
 from services.integrations import gmail
 from services.integrations.gmail import (
     accept_gmail_push,
@@ -181,6 +181,13 @@ def test_gmail_browser_callback_exchanges_code_and_binds_identity(
             "access_token": "access",
             "refresh_token": "refresh",
         }
+        sync = session.scalar(select(MailboxSync).where(MailboxSync.connection_id == connection.id))
+        job = session.scalar(select(Job).where(Job.kind == "gmail.initial_backfill"))
+        assert sync is not None
+        assert sync.status == "RUNNING"
+        assert sync.coverage_start is not None
+        assert job is not None
+        assert job.payload_ref["connection_id"] == str(connection.id)
     assert token_request["url"] == settings.gmail_token_url
     assert isinstance(token_request["data"], dict)
     assert token_request["data"]["code"] == "google-code"
@@ -230,7 +237,7 @@ def test_gmail_history_adapter_fetches_added_messages_and_marks_404_gap(
         assert page.messages[0]["id"] == "m1"
         assert requests[0][2]["startHistoryId"] == "100"
         assert requests[0][2]["historyTypes"] == "messageAdded"
-        assert requests[1][2]["metadataHeaders"] == ["From", "Auto-Submitted"]
+        assert requests[1][2] == {"format": "full"}
         session.add(MailboxSync(tenant_id=context.tenant_id, connection_id=connection.id))
         session.flush()
 

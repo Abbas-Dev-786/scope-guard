@@ -4,7 +4,7 @@ import base64
 import binascii
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -635,6 +635,36 @@ def post_request(request: RequestCreate, session: DbSession, context: CurrentCon
         return RequestRead.model_validate(create_request(session, context, project_id=request.project_id, summary=request.summary, communication_ids=request.communication_ids))
 
     return execute_idempotent(session, context, "POST /api/v1/requests", idempotency_key, request, RequestRead, create)
+
+
+@router.post("/requests/{request_id}/analyze", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED, tags=["analysis"])
+def analyze_request_route(request_id: UUID, session: DbSession, context: CurrentContext, idempotency_key: IdempotencyKey) -> JobRead:
+    from services.contracts.requests import get_request
+    from services.workers.durable import enqueue_job
+
+    request = get_request(session, context, request_id)
+
+    def enqueue() -> JobRead:
+        job = enqueue_job(
+            session,
+            tenant_id=context.tenant_id,
+            project_id=request.project_id,
+            kind="analysis.prepare",
+            payload_ref={"request_id": str(request.id), "request_version": request.request_version},
+            correlation_id=context.correlation_id,
+            deadline_at=datetime.now(UTC) + timedelta(minutes=8),
+        )
+        return JobRead.model_validate(job)
+
+    return execute_idempotent(
+        session,
+        context,
+        f"POST /api/v1/requests/{request_id}/analyze",
+        idempotency_key,
+        {},
+        JobRead,
+        enqueue,
+    )
 
 
 @router.get("/requests/{request_id}", response_model=RequestRead, tags=["requests"])

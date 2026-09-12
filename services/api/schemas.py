@@ -342,6 +342,7 @@ class RoutingEventRequest(StrictModel):
 
 class RoutingDecisionRead(StrictModel):
     id: UUID
+    external_event_id: UUID
     status: str
     precedence: str
     candidate_projects: list[str]

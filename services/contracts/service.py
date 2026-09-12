@@ -413,6 +413,7 @@ def route_external_event(
     alias: str | None = None,
     sender: str | None = None,
     thread_id: str | None = None,
+    request_summary: str | None = None,
 ) -> CommunicationEvent | RoutingDecision:
     event = session.scalar(select(ExternalEvent).where(ExternalEvent.id == external_event_id, ExternalEvent.tenant_id == context.tenant_id))
     if event is None:
@@ -440,7 +441,23 @@ def route_external_event(
         project_ids = list(session.scalars(select(IntegrationBinding.project_id).where(IntegrationBinding.tenant_id == context.tenant_id, IntegrationBinding.provider == event.provider, IntegrationBinding.resource_type == resource_type, IntegrationBinding.resource_id == resource_id, IntegrationBinding.status == "ACTIVE").distinct()))
         precedence = "BINDING"
     if len(project_ids) != 1:
-        decision = RoutingDecision(tenant_id=context.tenant_id, external_event_id=external_event_id, precedence=precedence, candidate_projects=[str(item) for item in project_ids], evidence=[{"resource_type": resource_type, "resource_id": resource_id, "source_version": source_version}], status="OPEN")
+        decision = RoutingDecision(
+            tenant_id=context.tenant_id,
+            external_event_id=external_event_id,
+            precedence=precedence,
+            candidate_projects=[str(item) for item in project_ids],
+            evidence=[
+                {
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "source_version": source_version,
+                    "sender": sender,
+                    "thread_id": thread_id,
+                    "request_summary": request_summary,
+                }
+            ],
+            status="OPEN",
+        )
         session.add(decision)
         session.flush()
         return decision
@@ -468,9 +485,11 @@ def resolve_routing_decision(
     decision = session.scalar(select(RoutingDecision).where(RoutingDecision.id == decision_id, RoutingDecision.tenant_id == context.tenant_id).with_for_update())
     if decision is None:
         raise NotFoundError("Routing decision was not found")
-    if decision.status != "OPEN" or str(project_id) not in decision.candidate_projects:
+    if decision.status != "OPEN":
         raise ConflictError("Routing decision is stale or the project is not a candidate")
     _require_project(session, context, project_id)
+    if decision.candidate_projects and str(project_id) not in decision.candidate_projects:
+        raise ConflictError("Routing decision is stale or the project is not a candidate")
     decision.status = "RESOLVED"
     decision.selected_project_id = project_id
     decision.resolved_by = actor
@@ -478,7 +497,53 @@ def resolve_routing_decision(
     event = session.get(ExternalEvent, decision.external_event_id)
     if event is None or not event.resource_type or not event.resource_id or not event.source_version or not event.content_ref:
         raise ConflictError("Original event identity is incomplete and cannot be replayed")
-    result = route_external_event(session, context, external_event_id=event.id, resource_type=event.resource_type, resource_id=event.resource_id, source_version=event.source_version, content_ref=event.content_ref, occurred_at=event.occurred_at, explicit_project_id=project_id)
+    routing_evidence = decision.evidence[0] if decision.evidence else {}
+    sender = str(routing_evidence.get("sender") or "") or None
+    thread_id = str(routing_evidence.get("thread_id") or "") or None
+    request_summary = str(routing_evidence.get("request_summary") or "") or None
+    if thread_id:
+        assignment = session.scalar(
+            select(ThreadAssignment).where(
+                ThreadAssignment.tenant_id == context.tenant_id,
+                ThreadAssignment.connection_id == event.connection_id,
+                ThreadAssignment.thread_id == thread_id,
+            )
+        )
+        if assignment is None:
+            session.add(
+                ThreadAssignment(
+                    tenant_id=context.tenant_id,
+                    project_id=project_id,
+                    connection_id=event.connection_id,
+                    thread_id=thread_id,
+                    assigned_by=actor,
+                )
+            )
+        elif assignment.project_id != project_id:
+            raise ConflictError("Gmail thread is already assigned to another project")
+    result = route_external_event(
+        session,
+        context,
+        external_event_id=event.id,
+        resource_type=event.resource_type,
+        resource_id=event.resource_id,
+        source_version=event.source_version,
+        content_ref=event.content_ref,
+        occurred_at=event.occurred_at,
+        explicit_project_id=project_id,
+        sender=sender,
+        thread_id=thread_id,
+        request_summary=request_summary,
+    )
+    if isinstance(result, CommunicationEvent) and request_summary:
+        from services.contracts.requests import create_request_from_communication
+
+        create_request_from_communication(
+            session,
+            context,
+            communication=result,
+            summary=request_summary,
+        )
     session.flush()
     return result
 

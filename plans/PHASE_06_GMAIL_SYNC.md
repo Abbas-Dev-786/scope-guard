@@ -1,6 +1,6 @@
 # Phase 06 — Gmail ingestion and connection lifecycle
 
-**Status:** In progress | **Required:** Yes | **Depends on:** Phases 02–03; phase 05 for the complete live journey  
+**Status:** Complete | **Required:** Yes | **Depends on:** Phases 02–03; phase 05 for the complete live journey
 **Owns:** R04; A09, A22; real-provider completion of A10/A11/A21  
 **References:** [Master](MASTER_PLAN.md), [TDD](../docs/TDD.md) §6–8, §12–17, §48, §57; [operations](../docs/OPERATIONS.md) §3–4.
 
@@ -20,11 +20,11 @@ Replace fixture-only ingress with durable authorized Gmail synchronization. Ensu
 - [x] P06-08 Implement immediate local disable on disconnect, cancellation of unsent actions/jobs and asynchronous watch stop/credential cleanup. Recheck connection eligibility at dispatch. Reconnect to the same authorized account with bounded catch-up; cancelled sends never resurrect automatically.
 - [x] P06-09 Implement bounded retries/backoff for provider throttling and read errors using the durable job layer. Verify approved read fallback parity; never switch transports to repeat an uncertain write.
 - [x] P06-10 Expose last successful sync, coverage window/gaps, watch expiry, reauthorization and routing failures in integration health. Configure expiry-within-24-hours warnings and stale-sync warnings after 30 minutes.
-- [ ] P06-11 Run a real authorized Gmail request through normalization, confirmed scope, Strands, exact approval/send and client review. Label provider fixtures and actual-account observations separately.
+- [x] P06-11 Run a real authorized Gmail request through normalization, confirmed scope, Strands, exact approval/send and client review. Label provider fixtures and actual-account observations separately.
 
 ## Implementation checkpoint
 
-P06-01 through P06-10 are implemented: OAuth/PKCE, encrypted credentials, native Pub/Sub ingress, watch-before-backfill, bounded history processing, normalization/routing, maintenance scheduling, disconnect cleanup, retries, and health warnings. P06-11 remains open until one real authorized Gmail message completes the deployed pipeline.
+P06-01 through P06-11 are complete. Live evidence: Gmail routing decision a1659910-bcad-4003-8a80-9a177db96b3e mapped communication f8b5b4aa-ba94-44e9-852d-2ab456144c6e; deployed Strands analysis job b3b3ce10-8e00-4814-b5de-ad33e933c7fe succeeded; change order c96ec2e6-77ce-4969-89b7-d980bc0866c3 was approved against an exact revision hash; durable Gmail send job 8af61d8b-bdea-4d0b-b55e-6436c175ce42 succeeded; client status is AWAITING_CLIENT_APPROVAL. Provider fixtures remain separate from this actual-account observation.
 
 ## Verification
 

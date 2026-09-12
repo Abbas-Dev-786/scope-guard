@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from services.contracts.service import _require_project
 from services.domain.auth import TrustedContext
 from services.domain.errors import AuthorizationError, ConflictError, NotFoundError, ValidationError
-from services.domain.models import CommunicationEvent, RequestCommunication, RequestRecord
+from services.domain.models import CommunicationEvent, Project, RequestCommunication, RequestRecord
 
 
 def create_request(session: Session, context: TrustedContext, *, project_id: UUID, summary: str, communication_ids: list[UUID] | None = None) -> RequestRecord:
@@ -100,3 +101,52 @@ def split_request(
     source.row_version += 1
     session.flush()
     return created
+
+
+def create_request_from_communication(
+    session: Session,
+    context: TrustedContext,
+    *,
+    communication: CommunicationEvent,
+    summary: str,
+) -> RequestRecord | None:
+    """Create and enqueue one analysis request for a newly mapped live communication."""
+    if communication.project_id is None or not summary.strip():
+        return None
+    existing = session.scalar(
+        select(RequestRecord)
+        .join(RequestCommunication, RequestCommunication.request_id == RequestRecord.id)
+        .where(
+            RequestCommunication.tenant_id == context.tenant_id,
+            RequestCommunication.communication_id == communication.id,
+        )
+    )
+    if existing is not None:
+        return existing
+    project = session.scalar(
+        select(Project).where(
+            Project.id == communication.project_id,
+            Project.tenant_id == context.tenant_id,
+        )
+    )
+    if project is None or project.status != "ACTIVE" or project.current_scope_version_id is None:
+        return None
+    request = create_request(
+        session,
+        context,
+        project_id=project.id,
+        summary=summary,
+        communication_ids=[communication.id],
+    )
+    from services.workers.durable import enqueue_job
+
+    enqueue_job(
+        session,
+        tenant_id=context.tenant_id,
+        project_id=project.id,
+        kind="analysis.prepare",
+        payload_ref={"request_id": str(request.id), "request_version": request.request_version},
+        correlation_id=context.correlation_id,
+        deadline_at=datetime.now(UTC) + timedelta(minutes=8),
+    )
+    return request

@@ -23,6 +23,7 @@ from services.contracts.service import ingest_external_event, route_external_eve
 from services.domain.auth import TrustedContext
 from services.domain.errors import ConflictError, NotFoundError, ValidationError
 from services.domain.models import (
+    CommunicationEvent,
     ExternalAction,
     ExternalEvent,
     IntegrationBinding,
@@ -56,6 +57,8 @@ class NormalizedGmailMessage:
     occurred_at: datetime
     content_ref: str
     labels: tuple[str, ...]
+    subject: str | None
+    snippet: str
 
 
 def _utc(value: datetime) -> datetime:
@@ -231,6 +234,7 @@ def _finish_gmail_oauth(
     connection.last_error = None
     connection.row_version += 1
     sync = session.scalar(select(MailboxSync).where(MailboxSync.connection_id == connection.id).with_for_update())
+    initial_backfill = sync is None or connection.committed_history_id is None
     if sync is None:
         sync = MailboxSync(tenant_id=tenant_id, connection_id=connection.id)
         session.add(sync)
@@ -238,6 +242,12 @@ def _finish_gmail_oauth(
         sync.status = "IDLE"
         sync.row_version += 1
     session.flush()
+    schedule_gmail_sync(
+        session,
+        _context(connection),
+        connection_id=connection.id,
+        initial_backfill=initial_backfill,
+    )
     return connection
 
 
@@ -447,6 +457,8 @@ def normalize_gmail_message(payload: dict[str, Any]) -> NormalizedGmailMessage |
     if headers.get("auto-submitted", "").lower() not in {"", "no"}:
         return None
     sender = headers.get("from")
+    subject = headers.get("subject") or None
+    snippet = " ".join(str(payload.get("snippet") or "").split())[:2000]
     occurred_value = payload.get("internalDate")
     try:
         occurred_at = datetime.fromtimestamp(int(occurred_value) / 1000, tz=UTC) if occurred_value else utc_now()
@@ -454,7 +466,7 @@ def normalize_gmail_message(payload: dict[str, Any]) -> NormalizedGmailMessage |
         raise ValidationError("Gmail message timestamp is invalid") from exc
     source_version = str(payload.get("historyId") or payload.get("etag") or "unknown")
     content_ref = str(payload.get("contentRef") or f"gmail://messages/{message_id}")
-    return NormalizedGmailMessage(message_id, thread_id, source_version, sender, occurred_at, content_ref, labels)
+    return NormalizedGmailMessage(message_id, thread_id, source_version, sender, occurred_at, content_ref, labels, subject, snippet)
 
 
 def accept_gmail_push(
@@ -530,12 +542,25 @@ def process_history_page(
             payload_hash=_hash(str(raw)),
             occurred_at=normalized.occurred_at, connection_id=connection.id,
         )
-        route_external_event(
+        request_summary = "\n\n".join(
+            item for item in (normalized.subject, normalized.snippet) if item
+        )[:4000] or f"Gmail message {normalized.provider_message_id}"
+        result = route_external_event(
             session, context, external_event_id=event.id,
             resource_type="message", resource_id=normalized.provider_message_id,
             source_version=normalized.source_version, content_ref=normalized.content_ref,
             occurred_at=normalized.occurred_at, sender=normalized.sender, thread_id=normalized.thread_id,
+            request_summary=request_summary,
         )
+        if mode == "INCREMENTAL" and isinstance(result, CommunicationEvent):
+            from services.contracts.requests import create_request_from_communication
+
+            create_request_from_communication(
+                session,
+                context,
+                communication=result,
+                summary=request_summary,
+            )
     current = now or utc_now()
     if next_history_id is not None and _history_is_newer(next_history_id, connection.committed_history_id):
         connection.committed_history_id = next_history_id
@@ -798,21 +823,13 @@ def fetch_gmail_history_page(
             if not message_id or message_id in seen:
                 continue
             seen.add(message_id)
-            detail_response = _gmail_request(
-                method="GET",
-                url=_gmail_api_url(f"users/me/messages/{message_id}"),
-                access_token=credentials["access_token"],
-                params={
-                    "format": "metadata",
-                    "metadataHeaders": ["From", "Auto-Submitted"],
-                },
+            messages.append(
+                _fetch_message_metadata(
+                    credentials["access_token"],
+                    message_id,
+                    history_id=str(body.get("historyId") or history_id),
+                )
             )
-            detail = _provider_response(detail_response, operation="message")
-            detail["historyId"] = str(detail.get("historyId") or body.get("historyId") or history_id)
-            payload = detail.get("payload")
-            if "headers" not in detail and isinstance(payload, dict):
-                detail["headers"] = payload.get("headers", [])
-            messages.append(detail)
     return GmailHistoryPage(
         messages=messages,
         history_id=str(body.get("historyId") or history_id),
@@ -1118,7 +1135,7 @@ def _fetch_message_metadata(
         method="GET",
         url=_gmail_api_url(f"users/me/messages/{message_id}"),
         access_token=access_token,
-        params={"format": "metadata", "metadataHeaders": ["From", "Auto-Submitted"]},
+        params={"format": "full"},
     )
     detail = _provider_response(response, operation="message")
     detail["historyId"] = str(detail.get("historyId") or history_id)
@@ -1255,13 +1272,24 @@ def schedule_gmail_maintenance(
         pending = session.scalars(
             select(Job).where(
                 Job.tenant_id == connection.tenant_id,
-                Job.kind.in_(("gmail.watch_renew", "gmail.history_sync")),
+                Job.kind.in_(("gmail.initial_backfill", "gmail.watch_renew", "gmail.history_sync")),
                 Job.state.in_(("QUEUED", "RUNNING", "RETRY_WAIT")),
             )
         ).all()
         pending_kinds = {
             job.kind for job in pending if str(job.payload_ref.get("connection_id") or "") == str(connection.id)
         }
+        sync = session.scalar(select(MailboxSync).where(MailboxSync.connection_id == connection.id))
+        if sync is not None and sync.mode == "INITIAL_BACKFILL" and sync.coverage_start is None:
+            if "gmail.initial_backfill" not in pending_kinds:
+                schedule_gmail_sync(
+                    session,
+                    _context(connection),
+                    connection_id=connection.id,
+                    initial_backfill=True,
+                )
+                created += 1
+            continue
         if connection.watch_expiry is None or _utc(connection.watch_expiry) <= current + timedelta(days=1):
             if "gmail.watch_renew" not in pending_kinds:
                 enqueue_job(
@@ -1273,10 +1301,10 @@ def schedule_gmail_maintenance(
                     correlation_id=uuid4(),
                 )
                 created += 1
-        if connection.committed_history_id and (
-            connection.last_success_at is None
-            or _utc(connection.last_success_at) <= current - timedelta(minutes=15)
-        ):
+        # Pub/Sub delivery is best-effort. The one-minute worker schedule is
+        # also the durable catch-up path, so always keep a history job queued
+        # while a cursor exists. pending_kinds prevents duplicate jobs.
+        if connection.committed_history_id:
             if "gmail.history_sync" not in pending_kinds:
                 enqueue_job(
                     session,

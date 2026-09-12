@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -181,6 +182,49 @@ class BedrockStructureProvider:
             raise StructureProviderUnavailable("Bedrock structured extraction failed") from exc
 
 
+def _source_grounded_line_candidates(chunks: Sequence[DocumentChunk]) -> list[ValidatedScopeCandidate]:
+    """Recover exact markdown/list spans when a model returns unusable offsets or paraphrases."""
+    candidates: list[ValidatedScopeCandidate] = []
+    seen_keys: set[str] = set()
+    for chunk in chunks:
+        section = "assumption"
+        cursor = 0
+        for raw_line in chunk.source_text.splitlines(keepends=True):
+            stripped = raw_line.strip()
+            if stripped.startswith("#"):
+                heading = stripped.lstrip("#").strip().lower()
+                if "included" in heading:
+                    section = "included"
+                elif "excluded" in heading:
+                    section = "excluded"
+                elif "commercial" in heading:
+                    section = "commercial"
+            elif stripped.startswith(("- ", "* ")) and len(stripped) > 2:
+                exact = stripped[2:].strip()
+                relative = raw_line.find(exact)
+                if relative >= 0:
+                    start = chunk.start_offset + cursor + relative
+                    end = start + len(exact)
+                    slug = re.sub(r"[^a-z0-9]+", "-", exact.lower()).strip("-")[:120] or "scope"
+                    key = f"{section}-{slug}"
+                    suffix = 2
+                    while key in seen_keys:
+                        key = f"{section}-{slug}-{suffix}"
+                        suffix += 1
+                    seen_keys.add(key)
+                    candidates.append(
+                        ValidatedScopeCandidate(
+                            item_key=key,
+                            item_type=section,
+                            text=exact,
+                            source_chunk_id=chunk.id,
+                            start_offset=start,
+                            end_offset=end,
+                        )
+                    )
+            cursor += len(raw_line)
+    return candidates
+
 def extract_scope_candidates(
     provider: StructureProvider,
     chunks: Sequence[DocumentChunk],
@@ -189,7 +233,17 @@ def extract_scope_candidates(
         payload = provider.extract(chunks)
     except StructureProviderUnavailable as exc:
         return StructureExtractionResult(status="PENDING", reason=str(exc))
-    validated = validate_or_pending(payload, chunks, pending_reason="provider_returned_no_items")
+    try:
+        validated = validate_or_pending(payload, chunks, pending_reason="provider_returned_no_items")
+    except ValidationError:
+        fallback = _source_grounded_line_candidates(chunks)
+        if not fallback:
+            return StructureExtractionResult(status="PENDING", reason="provider_output_not_source_grounded")
+        return StructureExtractionResult(
+            status="READY",
+            candidates=tuple(fallback),
+            reason=f"{provider.extractor_version}:source-span-fallback",
+        )
     if validated.status == "PENDING":
         return validated
     return StructureExtractionResult(

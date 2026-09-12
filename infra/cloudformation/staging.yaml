@@ -6,6 +6,8 @@ Parameters:
     Type: String
   AppSecretArn:
     Type: String
+  BedrockModelId:
+    Type: String
   EnvironmentName:
     Type: String
     Default: staging
@@ -43,6 +45,9 @@ Parameters:
   ClientReviewBaseUrl:
     Type: String
     Default: http://localhost:3000
+  EventBusName:
+    Type: String
+    Default: scopeguard-development
 
 Resources:
   VPC:
@@ -300,7 +305,7 @@ Resources:
                 Action: [ses:SendEmail, ses:SendRawEmail]
                 Resource: '*'
               - Effect: Allow
-                Action: bedrock:InvokeModel
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
                 Resource: '*'
               - Effect: Allow
                 Action: events:PutEvents
@@ -334,7 +339,7 @@ Resources:
           SCOPEGUARD_ALLOW_DEV_AUTH: 'false'
           SCOPEGUARD_CONTRACT_OBJECT_BUCKET: !Ref EvidenceBucketName
           SCOPEGUARD_CONTRACT_OBJECT_KMS_KEY_ARN: !Ref DataKeyArn
-          SCOPEGUARD_BEDROCK_MODEL_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:bedrock_model_id}}'
+          SCOPEGUARD_BEDROCK_MODEL_ID: !Ref BedrockModelId
           SCOPEGUARD_CAPABILITY_ENCRYPTION_KEY: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:capability_encryption_key}}'
           SCOPEGUARD_GMAIL_CLIENT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_id}}'
           SCOPEGUARD_GMAIL_CLIENT_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_secret}}'
@@ -344,6 +349,54 @@ Resources:
           SCOPEGUARD_CLIENT_REVIEW_BASE_URL: !Ref ClientReviewBaseUrl
           SCOPEGUARD_SES_CONFIGURATION_SET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_configuration_set}}'
           SCOPEGUARD_SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_from_email}}'
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DatabaseProxyTargetGroup
+    Properties:
+      FunctionName: scopeguard-staging-worker
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImageUri
+      ImageConfig:
+        Command: [services.workers.lambda_handler.handler]
+      Role: !GetAtt LambdaRole.Arn
+      MemorySize: 1024
+      Timeout: 900
+      VpcConfig:
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      Environment:
+        Variables:
+          SCOPEGUARD_ENVIRONMENT: !Ref EnvironmentName
+          SCOPEGUARD_DEPLOYMENT_REVISION: !Ref DeploymentRevision
+          SCOPEGUARD_AWS_REGION: !Ref AWS::Region
+          SCOPEGUARD_EVENT_BUS_NAME: !Ref EventBusName
+          SCOPEGUARD_BEDROCK_MODEL_ID: !Ref BedrockModelId
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+          SCOPEGUARD_CAPABILITY_ENCRYPTION_KEY: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:capability_encryption_key}}'
+          SCOPEGUARD_GMAIL_CLIENT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_id}}'
+          SCOPEGUARD_GMAIL_CLIENT_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_secret}}'
+          SCOPEGUARD_GMAIL_PUSH_VERIFICATION_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_push_verification_secret}}'
+          SCOPEGUARD_GMAIL_PUBSUB_TOPIC: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_pubsub_topic}}'
+          SCOPEGUARD_CLIENT_REVIEW_BASE_URL: !Ref ClientReviewBaseUrl
+          SCOPEGUARD_SES_CONFIGURATION_SET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_configuration_set}}'
+          SCOPEGUARD_SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_from_email}}'
+  WorkerSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: scopeguard-staging-worker-schedule
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt WorkerFunction.Arn
+          Id: ScopeGuardWorker
+  WorkerSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WorkerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WorkerSchedule.Arn
   MigrationFunction:
     Type: AWS::Lambda::Function
     DependsOn: DatabaseProxyTargetGroup
@@ -411,6 +464,8 @@ Outputs:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api/v1/integrations/gmail/callback
   ApiFunctionName:
     Value: !Ref ApiFunction
+  WorkerFunctionName:
+    Value: !Ref WorkerFunction
   MigrationFunctionName:
     Value: !Ref MigrationFunction
   DatabaseProxyEndpoint:
