@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -1186,6 +1187,98 @@ class PaymentRequest(Base):
         CheckConstraint("status IN ('NOT_REQUESTED','CREATION_PENDING','PENDING','REVIEW_REQUIRED','PAID','EXPIRED','CANCELLED','REVERSED')", name="ck_payment_request_status"),
     )
 
+class PaymentLinkAttempt(Base):
+    __tablename__ = "payment_link_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    payment_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("payment_requests.id", ondelete="RESTRICT"), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_account_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_environment: Mapped[str] = mapped_column(String(32), nullable=False, default="test")
+    reference_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="READY")
+    provider_link_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    provider_order_id: Mapped[str | None] = mapped_column(String(255))
+    short_url: Mapped[str | None] = mapped_column(String(1024))
+    provider_status: Mapped[str | None] = mapped_column(String(64))
+    action_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("external_actions.id", ondelete="RESTRICT"))
+    provider_payload: Mapped[dict[str, object] | None] = mapped_column(JSON_TYPE)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("payment_request_id", "attempt_number", name="uq_payment_link_attempt_number"),
+        CheckConstraint("attempt_number BETWEEN 1 AND 3", name="ck_payment_link_attempt_number"),
+        CheckConstraint("amount_minor > 0 AND amount_minor <= 100000000", name="ck_payment_link_attempt_amount"),
+        CheckConstraint("currency = 'INR'", name="ck_payment_link_attempt_currency"),
+        CheckConstraint("provider_environment = 'test'", name="ck_payment_link_attempt_environment"),
+        CheckConstraint("status IN ('READY','CREATED','UNKNOWN_OUTCOME','REVIEW_REQUIRED','EXPIRED','CANCELLED')", name="ck_payment_link_attempt_status"),
+        Index("ix_payment_link_attempt_request_status", "tenant_id", "payment_request_id", "status"),
+    )
+
+
+class PaymentAttempt(Base):
+    __tablename__ = "payment_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="RESTRICT"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("projects.id", ondelete="RESTRICT"))
+    link_attempt_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("payment_link_attempts.id", ondelete="RESTRICT"))
+    provider_payment_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    provider_order_id: Mapped[str | None] = mapped_column(String(255))
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    captured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    provider_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_payload: Mapped[dict[str, object] | None] = mapped_column(JSON_TYPE)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        CheckConstraint("amount_minor > 0 AND amount_minor <= 100000000", name="ck_payment_attempt_amount"),
+        CheckConstraint("currency = 'INR'", name="ck_payment_attempt_currency"),
+        Index("ix_payment_attempt_link_observed", "link_attempt_id", "observed_at"),
+    )
+
+
+class PaymentObservation(Base):
+    __tablename__ = "payment_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="RESTRICT"))
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("projects.id", ondelete="RESTRICT"))
+    payment_request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("payment_requests.id", ondelete="RESTRICT"))
+    link_attempt_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("payment_link_attempts.id", ondelete="RESTRICT"))
+    payment_attempt_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("payment_attempts.id", ondelete="RESTRICT"))
+    provider_account_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_environment: Mapped[str] = mapped_column(String(32), nullable=False, default="test")
+    provider_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider_link_id: Mapped[str | None] = mapped_column(String(255))
+    provider_payment_id: Mapped[str | None] = mapped_column(String(255))
+    provider_order_id: Mapped[str | None] = mapped_column(String(255))
+    reference_id: Mapped[str | None] = mapped_column(String(40))
+    amount_minor: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str | None] = mapped_column(String(3))
+    observed_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    raw_payload: Mapped[dict[str, object]] = mapped_column(JSON_TYPE, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    association_state: Mapped[str] = mapped_column(String(32), nullable=False, default="UNMATCHED")
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    associated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("provider_account_id", "provider_environment", "provider_event_id", name="uq_payment_observation_event"),
+        CheckConstraint("provider_environment = 'test'", name="ck_payment_observation_environment"),
+        Index("ix_payment_observations_request_time", "tenant_id", "payment_request_id", "observed_at"),
+    )
 
 class ApprovedRevenueFact(Base):
     __tablename__ = "approved_revenue_facts"

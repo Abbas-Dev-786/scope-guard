@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     client_review_base_url: str = "http://localhost:3000"
     ses_configuration_set: str = ""
     ses_from_email: str = ""
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+    razorpay_account_id: str = ""
+    razorpay_environment: str = "test"
+    razorpay_api_base_url: str = "https://api.razorpay.com/v1"
 
     @model_validator(mode="after")
     def safe_development_auth(self) -> Settings:

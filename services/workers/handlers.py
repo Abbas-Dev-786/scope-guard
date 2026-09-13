@@ -34,6 +34,17 @@ def _gmail_context(session: Session, connection_id: UUID, tenant_id: UUID) -> Tr
 
 def _run_payload_job(session: Session, job: Job) -> None:
     payload = job.payload_ref
+    if job.kind == "payment.create":
+        from services.payments.service import dispatch_payment_link
+
+        dispatch_payment_link(session, action_id=UUID(str(payload["action_id"])))
+        return
+    if job.kind == "payment.reconcile":
+        from services.payments.service import reconcile_payment_request
+
+        worker_context = TrustedContext(tenant_id=job.tenant_id, subject="worker", email="", email_verified=True, correlation_id=job.correlation_id)
+        reconcile_payment_request(session, worker_context, payment_request_id=UUID(str(payload["payment_request_id"])))
+        return
     if job.kind == "change_order.send":
         from services.integrations.gmail import dispatch_gmail_send
 

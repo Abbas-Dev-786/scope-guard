@@ -104,6 +104,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, int]:
         "failed_jobs": failed,
         "recovered_jobs": recovery.recovered_jobs,
         "gmail_maintenance_jobs": recovery.gmail_maintenance_jobs,
+        "payment_maintenance_jobs": recovery.payment_maintenance_jobs,
         "published_events": recovery.published_events,
         "failed_publications": recovery.failed_publications,
     }

@@ -17,7 +17,7 @@
 ## Deployed foundation evidence
 
 - CloudFormation stack scopeguard-foundation-development is CREATE_COMPLETE in us-east-1.
-- Cognito user pool us-east-1_B14OYNOU6, app client 34e5mk01lk0itt0vpr46p5rgj4, hosted domain scopeguard-359465684083-development.auth.us-east-1.amazonaws.com, and localhost PKCE callback are configured.
+- Cognito user pool us-east-1_B14OYNOU6, app client 34e5mk01lk0itt0vpr46p5rgj4, hosted domain scopeguard-359465684083-development.auth.us-east-1.amazoncognito.com, and localhost PKCE callback are configured.
 - Evidence bucket scopeguard-359465684083-development-us-east-1-v2 is private, versioned, and KMS encrypted.
 - EventBridge bus scopeguard-development and KMS-encrypted /scopeguard/development/operations log group with 30-day retention are deployed.
 - Stack resources verified: KMS key and alias, S3 bucket and policy, Cognito pool/client/domain, EventBridge bus, and operations log group.

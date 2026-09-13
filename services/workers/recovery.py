@@ -21,6 +21,7 @@ class RecoverySweepResult:
     published_events: int
     failed_publications: int
     gmail_maintenance_jobs: int = 0
+    payment_maintenance_jobs: int = 0
 
 
 def discover_lost_wakeups(session: Session, *, now: datetime | None = None) -> int:
@@ -95,10 +96,16 @@ def run_recovery_sweep(
 ) -> RecoverySweepResult:
     """Run the one-minute recovery work from a dedicated worker session."""
     from services.integrations.gmail import schedule_gmail_maintenance
+    from services.payments.service import (
+        replay_unmatched_payment_observations,
+        schedule_payment_maintenance,
+    )
     recovered = recover_expired_jobs(session, now=now)
     maintenance = schedule_gmail_maintenance(session, now=now)
+    payment_maintenance = schedule_payment_maintenance(session, now=now)
+    replay_unmatched_payment_observations(session, now=now)
     wakeups = discover_lost_wakeups(session, now=now)
     orphaned = recover_orphaned_actions(session, now=now)
     session.commit()
     published, failed = publish_outbox(session, publish=publish, now=now)
-    return RecoverySweepResult(recovered, wakeups, orphaned, published, failed, maintenance)
+    return RecoverySweepResult(recovered, wakeups, orphaned, published, failed, maintenance, payment_maintenance)

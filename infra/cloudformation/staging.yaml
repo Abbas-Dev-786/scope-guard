@@ -349,6 +349,12 @@ Resources:
           SCOPEGUARD_CLIENT_REVIEW_BASE_URL: !Ref ClientReviewBaseUrl
           SCOPEGUARD_SES_CONFIGURATION_SET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_configuration_set}}'
           SCOPEGUARD_SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_from_email}}'
+          SCOPEGUARD_RAZORPAY_KEY_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_key_id}}'
+          SCOPEGUARD_RAZORPAY_KEY_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_key_secret}}'
+          SCOPEGUARD_RAZORPAY_WEBHOOK_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_webhook_secret}}'
+          SCOPEGUARD_RAZORPAY_ACCOUNT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_account_id}}'
+          SCOPEGUARD_RAZORPAY_ENVIRONMENT: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_environment}}'
+          SCOPEGUARD_RAZORPAY_API_BASE_URL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_api_base_url}}'
   WorkerFunction:
     Type: AWS::Lambda::Function
     DependsOn: DatabaseProxyTargetGroup
@@ -381,6 +387,12 @@ Resources:
           SCOPEGUARD_CLIENT_REVIEW_BASE_URL: !Ref ClientReviewBaseUrl
           SCOPEGUARD_SES_CONFIGURATION_SET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_configuration_set}}'
           SCOPEGUARD_SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:ses_from_email}}'
+          SCOPEGUARD_RAZORPAY_KEY_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_key_id}}'
+          SCOPEGUARD_RAZORPAY_KEY_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_key_secret}}'
+          SCOPEGUARD_RAZORPAY_WEBHOOK_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_webhook_secret}}'
+          SCOPEGUARD_RAZORPAY_ACCOUNT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_account_id}}'
+          SCOPEGUARD_RAZORPAY_ENVIRONMENT: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_environment}}'
+          SCOPEGUARD_RAZORPAY_API_BASE_URL: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:razorpay_api_base_url}}'
   WorkerSchedule:
     Type: AWS::Events::Rule
     Properties:
@@ -427,7 +439,8 @@ Resources:
       CorsConfiguration:
         AllowOrigins: [!Ref ClientReviewBaseUrl]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-        AllowHeaders: [Authorization, Content-Type, X-Request-Id]
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key, X-Request-Id, X-CSRF-Token]
+        AllowCredentials: true
         MaxAge: 300
   ApiIntegration:
     Type: AWS::ApiGatewayV2::Integration

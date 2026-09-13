@@ -573,11 +573,35 @@ class ClientAcceptanceRequest(StrictModel):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class PaymentLinkReplaceRequest(StrictModel):
+    expected_row_version: int = Field(gt=0)
+
+
+class PaymentRequestRead(StrictModel):
+    id: UUID
+    project_id: UUID
+    accepted_revision_id: UUID
+    total_minor: int
+    tax_minor: int
+    currency: str
+    status: str
+    due_at: datetime | None
+    expire_at: datetime | None
+    paid_at: datetime | None
+    row_version: int
+    provider_link_id: str | None = None
+    payment_link_url: str | None = None
+    payment_link_status: str | None = None
+    collected_minor: int = 0
+    job_id: UUID | None = None
+
 class ClientReceiptRead(StrictModel):
     change_order_id: UUID
     revision_id: UUID
     status: str
     payment_status: str
     payment_request_id: UUID | None
+    payment_link_url: str | None = None
+    payment_link_status: str | None = None
     receipt_session_token: str | None = None
     receipt_csrf_token: str | None = None

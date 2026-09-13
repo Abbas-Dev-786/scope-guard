@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Cookie, Header, Query, Response, status
+from fastapi import APIRouter, Cookie, Header, Query, Request, Response, status
 from sqlalchemy import select
 
 from services.agents.persistence import (
@@ -52,6 +52,8 @@ from services.api.schemas import (
     OnboardingRead,
     OperationsHealthRead,
     Page,
+    PaymentLinkReplaceRequest,
+    PaymentRequestRead,
     PreferenceRead,
     PreferenceUpdate,
     ProjectCreate,
@@ -941,6 +943,67 @@ def withdraw_change_order_route(change_order_id: UUID, request: WithdrawalReques
     return execute_idempotent(session, context, f"/api/v1/change-orders/{change_order_id}/withdraw", idempotency_key, request, ChangeOrderRead, withdraw)
 
 
+@router.get("/payment-requests/{payment_request_id}", response_model=PaymentRequestRead, tags=["payments"])
+def payment_requests_route(payment_request_id: UUID, session: DbSession, context: CurrentContext) -> PaymentRequestRead:
+    from services.payments.service import read_payment_request
+
+    return PaymentRequestRead.model_validate(read_payment_request(session, context, payment_request_id=payment_request_id))
+
+
+@router.post("/payment-requests/{payment_request_id}/create-link", response_model=PaymentRequestRead, status_code=status.HTTP_202_ACCEPTED, tags=["payments"])
+def create_payment_link_route(payment_request_id: UUID, session: DbSession, context: CurrentContext, idempotency_key: IdempotencyKey) -> PaymentRequestRead:
+    from services.payments.service import prepare_payment_link, read_payment_request
+
+    def create() -> PaymentRequestRead:
+        _action, job = prepare_payment_link(session, context, payment_request_id=payment_request_id)
+        return PaymentRequestRead.model_validate(read_payment_request(session, context, payment_request_id=payment_request_id, job_id=getattr(job, "id", None)))
+
+    return execute_idempotent(session, context, f"POST /api/v1/payment-requests/{payment_request_id}/create-link", idempotency_key, {}, PaymentRequestRead, create)
+
+
+@router.post("/payment-requests/{payment_request_id}/replace-link", response_model=PaymentRequestRead, status_code=status.HTTP_202_ACCEPTED, tags=["payments"])
+def replace_payment_link_route(payment_request_id: UUID, request: PaymentLinkReplaceRequest, session: DbSession, context: CurrentContext, idempotency_key: IdempotencyKey) -> PaymentRequestRead:
+    from services.payments.service import read_payment_request, replace_payment_link
+
+    def replace() -> PaymentRequestRead:
+        _action, job = replace_payment_link(session, context, payment_request_id=payment_request_id, expected_row_version=request.expected_row_version)
+        return PaymentRequestRead.model_validate(read_payment_request(session, context, payment_request_id=payment_request_id, job_id=getattr(job, "id", None)))
+
+    return execute_idempotent(session, context, f"POST /api/v1/payment-requests/{payment_request_id}/replace-link", idempotency_key, request, PaymentRequestRead, replace)
+
+@router.post("/payment-requests/{payment_request_id}/reconcile", response_model=PaymentRequestRead, tags=["payments"])
+def reconcile_payment_route(payment_request_id: UUID, session: DbSession, context: CurrentContext, idempotency_key: IdempotencyKey) -> PaymentRequestRead:
+    from services.payments.service import read_payment_request, reconcile_payment_request
+
+    def reconcile() -> PaymentRequestRead:
+        reconcile_payment_request(session, context, payment_request_id=payment_request_id)
+        return PaymentRequestRead.model_validate(read_payment_request(session, context, payment_request_id=payment_request_id))
+
+    return execute_idempotent(session, context, f"POST /api/v1/payment-requests/{payment_request_id}/reconcile", idempotency_key, {}, PaymentRequestRead, reconcile)
+
+
+@webhook_router.post("/webhooks/razorpay", tags=["payments"])
+async def razorpay_webhook(request: Request, session: DbSession, x_razorpay_signature: Annotated[str | None, Header(alias="X-Razorpay-Signature")] = None, x_razorpay_event_id: Annotated[str | None, Header(alias="X-Razorpay-Event-Id")] = None) -> dict[str, object]:
+    from services.api.config import get_settings
+    from services.integrations.razorpay import RazorpayProvider
+    from services.payments.service import observe_payment_event
+
+    raw_body = await request.body()
+    provider = RazorpayProvider(key_id="", key_secret="", api_base_url="", account_id=str(get_settings().razorpay_account_id or "").strip())
+    if not provider.account_id or not provider.verify_webhook_signature(raw_body, x_razorpay_signature or ""):
+        raise ValidationError("Razorpay webhook signature is invalid")
+    try:
+        payload = json.loads(raw_body)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValidationError("Razorpay webhook payload is invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValidationError("Razorpay webhook payload is invalid")
+    event_type = str(payload.get("event") or "").strip()
+    if not event_type:
+        raise ValidationError("Razorpay webhook event is missing")
+    observation = observe_payment_event(session, provider_account_id=provider.account_id, provider_environment="test", provider_event_id=x_razorpay_event_id or "", event_type=event_type, payload=payload, signature_verified=True)
+    return {"observation_id": str(observation.id), "status": "accepted"}
+
 def _public_response(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -953,7 +1016,7 @@ def exchange_capability_route(request: CapabilityExchangeRequest, response: Resp
 
     credentials = exchange_capability(session, token=request.token)
     _public_response(response)
-    response.set_cookie("scopeguard_client_session", credentials.session_token, max_age=86400, httponly=True, secure=True, samesite="strict", path="/public/v1")
+    response.set_cookie("scopeguard_client_session", credentials.session_token, max_age=86400, httponly=True, secure=True, samesite="none", path="/public/v1")
     return {"change_order_id": str(credentials.capability.change_order_id), "csrf_token": credentials.csrf_token}
 
 
@@ -1000,7 +1063,7 @@ def refresh_client_session_route(response: Response, session: DbSession, scopegu
         raise ValidationError("Invalid client session")
     credentials = refresh_client_session(session, session_token=scopeguard_client_session)
     _public_response(response)
-    response.set_cookie("scopeguard_client_session", credentials.session_token, max_age=86400, httponly=True, secure=True, samesite="strict", path="/public/v1")
+    response.set_cookie("scopeguard_client_session", credentials.session_token, max_age=86400, httponly=True, secure=True, samesite="none", path="/public/v1")
     return {"change_order_id": str(credentials.capability.change_order_id), "csrf_token": credentials.csrf_token}
 
 @public_router.post("/change-orders/{change_order_id}/request-changes", response_model=dict[str, str], tags=["client"])
@@ -1038,5 +1101,5 @@ def client_accept_route(
         raise ValidationError("Client session and CSRF token are required")
     result = accept_client(session, session_token=scopeguard_client_session, csrf_token=csrf_token, change_order_id=change_order_id, expected_row_version=request.expected_row_version, revision_id=request.revision_id, content_hash=request.content_hash, client_idempotency_key=idempotency_key)
     _public_response(response)
-    response.set_cookie("scopeguard_client_session", result.receipt.session_token, max_age=86400, httponly=True, secure=True, samesite="strict", path="/public/v1")
+    response.set_cookie("scopeguard_client_session", result.receipt.session_token, max_age=86400, httponly=True, secure=True, samesite="none", path="/public/v1")
     return ClientReceiptRead(change_order_id=result.change_order.id, revision_id=result.receipt.capability.revision_id, status=result.change_order.status, payment_status=result.payment_request.status, payment_request_id=result.payment_request.id)

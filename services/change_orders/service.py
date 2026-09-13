@@ -29,6 +29,7 @@ from services.domain.models import (
     EvidenceReference,
     ExternalAction,
     Notification,
+    PaymentLinkAttempt,
     PaymentRequest,
     Project,
     ProposalRevision,
@@ -591,7 +592,9 @@ def accept_client(
     session.add(payment)
     session.add(ApprovedRevenueFact(tenant_id=capability.tenant_id, project_id=project.id, change_order_id=order.id, revision_id=revision.id, amount_minor=revision.total_minor, tax_minor=revision.tax_minor, currency=revision.currency))
     session.flush()
-    enqueue_job(session, tenant_id=capability.tenant_id, project_id=project.id, kind="payment.create", payload_ref={"payment_request_id": str(payment.id), "accepted_revision_id": str(revision.id)}, correlation_id=uuid4())
+    from services.payments.service import prepare_payment_link
+    payment_context = TrustedContext(tenant_id=capability.tenant_id, subject=f"client:{capability.client_id}", email=revision.recipient_email, email_verified=True, correlation_id=uuid4())
+    prepare_payment_link(session, payment_context, payment_request_id=payment.id)
     receipt = _receipt_credentials(session, capability, revision, now=now)
     session.flush()
     return AcceptanceResult(order, payment, receipt)
@@ -615,7 +618,16 @@ def verify_receipt_session(session: Session, *, session_token: str) -> dict[str,
     if capability.purpose != "RECEIPT" or order.status != "CLIENT_APPROVED":
         raise ValidationError("Receipt is unavailable")
     payment = session.scalar(select(PaymentRequest).where(PaymentRequest.accepted_revision_id == revision.id))
-    return {"change_order_id": str(order.id), "revision_id": str(revision.id), "status": order.status, "payment_status": payment.status if payment else "CREATION_PENDING", "payment_request_id": str(payment.id) if payment else None}
+    link = session.scalar(
+        select(PaymentLinkAttempt)
+        .where(
+            PaymentLinkAttempt.payment_request_id == payment.id if payment else False,
+            PaymentLinkAttempt.status == "CREATED",
+        )
+        .order_by(PaymentLinkAttempt.attempt_number.desc())
+        .limit(1)
+    )
+    return {"change_order_id": str(order.id), "revision_id": str(revision.id), "status": order.status, "payment_status": payment.status if payment else "CREATION_PENDING", "payment_request_id": str(payment.id) if payment else None, "payment_link_url": link.short_url if link else None, "payment_link_status": link.provider_status if link else None}
 
 
 def read_change_order(session: Session, context: TrustedContext, *, change_order_id: UUID) -> ChangeOrder:
