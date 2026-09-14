@@ -29,6 +29,7 @@ ScopeGuard was built for the **Professional Agents** track of the **AWS Agents f
 
 - [The problem](#the-problem)
 - [The solution](#the-solution)
+- [How we use the Strands Agents SDK](#how-we-use-the-strands-agents-sdk)
 - [Architecture](#architecture)
 - [How it works](#how-it-works)
 - [User flows](#user-flows)
@@ -99,9 +100,23 @@ The agent does the preparation. Humans and deterministic services retain authori
 - **Background work is durable.** Jobs, leases, retries, idempotency keys, outbox entries, uncertain outcomes, and audit events survive worker failures.
 - **Tenant identity is server-derived.** Cognito claims establish ownership; tenant IDs supplied by a browser are never trusted.
 
+## How we use the Strands Agents SDK
+
+ScopeGuard uses Strands as a bounded reasoning layer, not as the authority that performs consequential actions. For every analysis job, the worker creates fresh Strands `Agent` instances backed by the Amazon Bedrock `BedrockModel` adapter and Nova Lite at temperature zero. Each role receives a narrow system prompt, an explicit responsibility, only reviewed read-only tools, and a strict Pydantic structured-output model.
+
+The six roles separate contract extraction, scope classification, evidence retrieval, impact estimation, change-order drafting and client-message drafting. The orchestration layer validates every returned evidence ID against the current tenant and project, rejects unknown schema fields and unsafe output, permits at most one bounded repair, and stops safely when evidence is incomplete. Token, time, attempt and cost budgets are reserved before inference and reconciled afterward.
+
+Strands therefore handles the work that benefits from language understanding and judgment. Deterministic application services still own pricing, recipient authorization, revision hashing, Gmail sending, client capability exchange, payment-link creation and webhook reconciliation. A deployed Bedrock AgentCore runtime provides a separately bounded runtime path and has passed repeated readiness invocations.
+
+This design lets ScopeGuard be genuinely agentic while keeping contractual communication and financial actions auditable, repeatable and under human control.
+
 ## Architecture
 
 ### System architecture
+
+[![ScopeGuard system architecture](docs/assets/scopeguard-system-architecture.png)](docs/assets/scopeguard-system-architecture.png)
+
+> [Open or download the full-resolution system architecture diagram](docs/assets/scopeguard-system-architecture.png).
 
 ```mermaid
 flowchart TB
@@ -137,6 +152,10 @@ flowchart TB
 ```
 
 ### Agent and decision flow
+
+[![How ScopeGuard uses the Strands Agents SDK](docs/assets/scopeguard-strands-agent-workflow.png)](docs/assets/scopeguard-strands-agent-workflow.png)
+
+> [Open or download the full-resolution Strands Agents workflow diagram](docs/assets/scopeguard-strands-agent-workflow.png).
 
 ```mermaid
 flowchart TD
