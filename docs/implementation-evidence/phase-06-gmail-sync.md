@@ -8,3 +8,6 @@
 - The deployed API rejects unauthenticated integration-health access with HTTP 401 and exposes the authenticated integration-health route.
 
 The remaining external evidence is a controlled authorized Gmail account observation covering read/search, watch/push, exact approved send, reconnect/disconnect, and the full proposal journey. No live-account success is inferred from fixtures or local tests.
+## Live Gmail OAuth connection observation — 14 September 2026
+
+A controlled OAuth consent flow completed against the deployed staging callback. The connection returned `CONNECTED`, a redacted student-domain account identity, granted `gmail.readonly`, `gmail.send`, `openid`, and email identity scopes, committed history ID `322446`, watch expiry `2026-09-19T05:04:48Z`, `sync_status=RUNNING`, and no recorded error. The full mailbox address, OAuth authorization code, tokens, and message contents are intentionally not retained. Read/search, exact send, reconnect/disconnect, and SES inbox receipt remain separate evidence steps.

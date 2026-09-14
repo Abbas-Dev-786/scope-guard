@@ -14,13 +14,13 @@ Complete these fields with observed evidence before full implementation depends 
 | --- | --- | --- |
 | AWS region | Nova Lite active in both candidate regions; staging deployed in us-east-1; Aurora major/proxy intersection remains conditional | Partial |
 | Runtime/dependencies | Python/Node/pnpm/uv locks, AgentCore runtime, staging image revision 42, and production build verified | Verified for staging |
-| Database | Fresh PostgreSQL 16.6 migrated through 0014 with no drift; private Aurora/proxy limits remain unverified | Partial |
+| Database | Fresh PostgreSQL 16.6 migrated through 0014 with no drift; staging Aurora/RDS Proxy route and health verified, but private role/backup limits remain unverified | Partial |
 | Model | Nova Lite access, structured output, three-run evaluation, reviewed prices and staging ceiling verified | Verified for staging |
-| Network | API health/readiness and public model/provider egress verified; private DB route/security matrix remains open | Partial |
+| Network | API health/readiness, public model/provider egress, and staging Lambda-to-RDS Proxy route verified; private DB role/security matrix remains open | Partial |
 | Gmail | OAuth scopes and account identity, watch/push authentication, sync, read and send proof | Pending |
 | Razorpay | Test Mode account read and provider lookup accepted; ScopeGuard-owned link/webhook correlation remains unproven | Partial |
 | SES | Verified sender and sandbox acceptance observed; inbox delivery remains unverified | Partial |
-| Hosting/Cognito | Pool/client/callback and protected-route rejection verified; deployed owner/object authorization remains open | Partial |
+| Hosting/Cognito | Pool/client/callback, protected-route rejection, and one deployed cross-tenant object boundary verified; broader owner/object authorization matrix remains open | Partial |
 | Telemetry | Request/audit correlation and AgentCore CloudWatch/X-Ray enabled; full redacted end-to-end trace remains open | Partial |
 | GitHub/Slack | Eligibility and approved read manifest if P1 integration is enabled | Optional; pending |
 | Data lifecycle | KMS/private S3/log retention and immutable-role declarations verified; backup/restore/deletion exercise remains open | Partial |

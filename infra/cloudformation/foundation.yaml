@@ -12,6 +12,11 @@ Parameters:
     Type: String
   LogoutUrl:
     Type: String
+  ProductionWebOrigin:
+    Type: String
+    Default: https://scope-guard-web.vercel.app
+    AllowedPattern: '^https://[^/]+$'
+    ConstraintDescription: Must be an HTTPS origin without a trailing slash or path.
   EnableAdminTestAuth:
     Type: String
     Default: 'false'
@@ -60,6 +65,18 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Ref EvidenceBucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - http://localhost:3000
+              - !Ref ProductionWebOrigin
+            AllowedMethods:
+              - POST
+            AllowedHeaders:
+              - '*'
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3600
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -129,8 +146,12 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows: [code]
       AllowedOAuthScopes: [openid, email, profile]
-      CallbackURLs: [!Ref CallbackUrl]
-      LogoutURLs: [!Ref LogoutUrl]
+      CallbackURLs:
+        - !Ref CallbackUrl
+        - !Sub ${ProductionWebOrigin}/auth/callback
+      LogoutURLs:
+        - !Ref LogoutUrl
+        - !Sub ${ProductionWebOrigin}/sign-in
       SupportedIdentityProviders: [COGNITO]
   Domain:
     Type: AWS::Cognito::UserPoolDomain

@@ -62,7 +62,12 @@ Parameters:
     Default: '1'
   ClientReviewBaseUrl:
     Type: String
-    Default: http://localhost:3000
+    Default: https://scope-guard-web.vercel.app
+  ProductionWebOrigin:
+    Type: String
+    Default: https://scope-guard-web.vercel.app
+    AllowedPattern: '^https://[^/]+$'
+    ConstraintDescription: Must be an HTTPS origin without a trailing slash or path.
   EventBusName:
     Type: String
     Default: scopeguard-development
@@ -442,7 +447,7 @@ Resources:
       FunctionName: !Ref WorkerFunction
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
-      SourceArn: !GetAtt WorkerSchedule.Arn
+      SourceArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/scopeguard-staging-worker-schedule
   MigrationFunction:
     Type: AWS::Lambda::Function
     DependsOn: DatabaseProxyTargetGroup
@@ -471,7 +476,9 @@ Resources:
       Name: scopeguard-staging-http-api
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins: [!Ref ClientReviewBaseUrl]
+        AllowOrigins:
+          - http://localhost:3000
+          - !Ref ProductionWebOrigin
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, Idempotency-Key, X-Request-Id, X-CSRF-Token]
         AllowCredentials: true

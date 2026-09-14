@@ -58,6 +58,9 @@ To include PostgreSQL-specific checks, point `SCOPEGUARD_DATABASE_URL` at a migr
 
 Implemented: uv-managed Python environment, FastAPI/Lambda entry point, Cognito JWT verifier, PKCE sign-in callback, verified-email onboarding, tenant-scoped foundational APIs, PostgreSQL migrations through Phase 07, immutable preference/calendar/approval/payment records, exact money/terms utilities, connector deny-by-default policy, Next.js management/proposal/client-review screens, Gmail lifecycle services, Razorpay Test Mode adapter/reconciliation, and a staging Lambda deployment.
 
-Pending evidence: controlled Gmail OAuth/read/send/watch and SES receipt, one ScopeGuard-created Razorpay Test Mode link paid and reconciled through its signed webhook, a three-run held-out live evaluation, and clean-environment recreation. These remain release gates; fixtures and unrelated provider links do not close them.
+Pending evidence: controlled Gmail OAuth/read/send/watch and SES receipt, one ScopeGuard-created Razorpay Test Mode link paid and reconciled through its signed webhook, the complete private-cloud authorization matrix, and full cloud-stack recreation. The three-run held-out live evaluation and clean local PostgreSQL recreation are complete and recorded; provider/release gates remain open.
 
 See [plans/README.md](plans/README.md), [docs/PRD.md](docs/PRD.md), [docs/TDD.md](docs/TDD.md), and [Phase 0/1 evidence](docs/implementation-evidence/phase-01-foundation.md).
+## Architecture and license
+
+See [the architecture diagram](docs/ARCHITECTURE.md). This repository is released under the [MIT License](LICENSE).
