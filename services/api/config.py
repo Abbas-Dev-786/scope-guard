@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
 
 from pydantic import Field, model_validator
@@ -24,6 +25,11 @@ class Settings(BaseSettings):
     bedrock_model_id: str = "replace-after-readiness-verification"
     contract_structure_model_timeout_seconds: int = Field(default=120, ge=1, le=120)
     max_model_cost_minor_per_day: int = Field(default=0, ge=0)
+    model_price_version: str = ""
+    model_price_reviewed_at: datetime | None = None
+    model_price_max_age_days: int = Field(default=30, gt=0, le=365)
+    model_input_price_minor_per_1k: int = Field(default=0, ge=0)
+    model_output_price_minor_per_1k: int = Field(default=0, ge=0)
     tenant_token_limit_per_day: int = Field(default=250_000, gt=0)
     deployment_token_limit_per_day: int = Field(default=1_000_000, gt=0)
     capability_encryption_key: str = ""

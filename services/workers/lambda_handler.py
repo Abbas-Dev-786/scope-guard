@@ -63,8 +63,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, int]:
         with SessionLocal() as session:
             claimed = claim_jobs(session, worker_id=worker_id, limit=limit)
             leases = [
-                (UUID(str(job.id)), int(job.fencing_generation), str(job.kind))
-                for job in claimed
+                (UUID(str(job.id)), int(job.fencing_generation), str(job.kind)) for job in claimed
             ]
             session.commit()
         if not leases:
@@ -105,6 +104,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, int]:
         "recovered_jobs": recovery.recovered_jobs,
         "gmail_maintenance_jobs": recovery.gmail_maintenance_jobs,
         "payment_maintenance_jobs": recovery.payment_maintenance_jobs,
+        "payment_webhooks_normalized": recovery.payment_webhooks_normalized,
         "published_events": recovery.published_events,
         "failed_publications": recovery.failed_publications,
     }

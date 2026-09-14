@@ -175,6 +175,7 @@ class EventEnvelope(StrictModel):
     causation_id: UUID | None
     payload_ref: str
 
+
 class JobRead(StrictModel):
     id: UUID
     kind: str
@@ -220,6 +221,8 @@ class OperationsHealthRead(StrictModel):
     status: Literal["ok", "degraded"]
     counters: dict[str, int]
     gauges: dict[str, int]
+
+
 class DocumentUploadRequest(StrictModel):
     object_key: str = Field(min_length=1, max_length=512)
     mime_type: str = Field(min_length=1, max_length=120)
@@ -289,6 +292,7 @@ class GmailOAuthStartRead(StrictModel):
     authorization_url: str
     state: str
 
+
 class GmailOAuthCallbackRequest(StrictModel):
     state: str = Field(min_length=43, max_length=256)
     code: str = Field(min_length=1, max_length=4096)
@@ -298,6 +302,7 @@ class GmailOAuthCallbackRequest(StrictModel):
     access_token: str = Field(min_length=1, max_length=4096)
     refresh_token: str | None = Field(default=None, max_length=4096)
 
+
 class GmailPushRequest(StrictModel):
     provider_account_id: str = Field(min_length=1, max_length=255)
     watch_id: str = Field(min_length=1, max_length=255)
@@ -306,6 +311,7 @@ class GmailPushRequest(StrictModel):
     payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     occurred_at: datetime
     verification_token: str = Field(min_length=1, max_length=256)
+
 
 class IntegrationConnectionRead(StrictModel):
     id: UUID
@@ -323,6 +329,7 @@ class IntegrationConnectionRead(StrictModel):
     gap_reason: str | None
     watch_expiry_warning: bool
     stale_sync_warning: bool
+
 
 class RoutingEventRequest(StrictModel):
     provider: str = Field(min_length=1, max_length=80)
@@ -359,6 +366,7 @@ class CommunicationRead(StrictModel):
     thread_id: str | None
     occurred_at: datetime
 
+
 class ScopeCandidateRead(StrictModel):
     candidate_id: UUID
     status: str
@@ -374,6 +382,7 @@ class RoutingResultRead(StrictModel):
     resource_type: str | None = None
     resource_id: str | None = None
     source_version: str | None = None
+
 
 class RequestCreate(StrictModel):
     project_id: UUID
@@ -406,6 +415,7 @@ class RequestMerge(StrictModel):
 class RoutingResolveRequest(StrictModel):
     project_id: UUID
 
+
 class DocumentDownloadRead(StrictModel):
     document_id: UUID
     object_key: str
@@ -413,6 +423,7 @@ class DocumentDownloadRead(StrictModel):
     sha256: str
     access_scope: str
     download_url: str | None = None
+
 
 class DocumentCandidateRead(StrictModel):
     id: UUID
@@ -429,6 +440,7 @@ class StructureExtractionRead(StrictModel):
     status: Literal["PENDING", "READY"]
     reason: str | None
     candidates: list[DocumentCandidateRead]
+
 
 class AnalysisDecisionRead(StrictModel):
     id: UUID
@@ -472,6 +484,7 @@ class WorkflowTraceRead(StrictModel):
     current_phase: str | None
     policy_version: str | None
     stages: list[dict[str, object]]
+
 
 class ProposalRevisionRead(StrictModel):
     id: UUID
@@ -536,8 +549,10 @@ class FreelancerApprovalRequest(StrictModel):
 class FreelancerDecisionRequest(StrictModel):
     comment: str | None = Field(default=None, max_length=2000)
 
+
 class WithdrawalRequest(StrictModel):
     reason: str | None = Field(default=None, max_length=500)
+
 
 class ClientDecisionRequest(StrictModel):
     expected_row_version: int = Field(gt=0)
@@ -545,11 +560,15 @@ class ClientDecisionRequest(StrictModel):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     comment: str | None = Field(default=None, max_length=2000)
 
+
 class CapabilityExchangeRequest(StrictModel):
     token: str = Field(min_length=43, max_length=256)
 
 
 class ClientReviewRead(StrictModel):
+    # Optimistic-concurrency fields are required by approve/request-changes actions.
+    row_version: int = Field(gt=0)
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     change_order_id: UUID
     revision_id: UUID
     revision_number: int
@@ -594,6 +613,7 @@ class PaymentRequestRead(StrictModel):
     payment_link_status: str | None = None
     collected_minor: int = 0
     job_id: UUID | None = None
+
 
 class ClientReceiptRead(StrictModel):
     change_order_id: UUID

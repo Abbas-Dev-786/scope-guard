@@ -1,6 +1,6 @@
 # ScopeGuard implementation plans
 
-Created 7 September 2026 from the revised architecture. Planning is complete when these documents are reviewed; implementation remains **Not started**.
+Created 7 September 2026 from the revised architecture. Planning is complete; implementation and evidence status are tracked in each phase document and evidence record.
 
 Start with [MASTER_PLAN.md](MASTER_PLAN.md), then use [ACCEPTANCE_MATRIX.md](ACCEPTANCE_MATRIX.md) to track proof. Execute the required phases in dependency order:
 
@@ -18,5 +18,5 @@ Start with [MASTER_PLAN.md](MASTER_PLAN.md), then use [ACCEPTANCE_MATRIX.md](ACC
 | 09 | [Hardening and release](PHASE_09_RELEASE.md) | Failure/restore evidence and reproducible submission |
 | 10 | [Optional enhancements](PHASE_10_OPTIONAL.md) | Independently gated P1 additions |
 
-All checkboxes represent future work. A plan, fixture, mock response or successful deployment by itself does not prove acceptance. Phase 10 is excluded from the MVP completion gate.
+Checkboxes are implementation/evidence tracking, not automatic acceptance claims. A plan, fixture, mock response or successful deployment by itself does not prove a live exit gate; the evidence records distinguish verified, blocked, and pending observations. Phases 00–07 are the current required implementation scope; Phase 08–09 remain required for full MVP release, and Phase 10 is optional.
 

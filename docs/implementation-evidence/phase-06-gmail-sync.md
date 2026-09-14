@@ -1,0 +1,10 @@
+# Phase 06 Gmail synchronization verification
+
+**Observed:** 14 September 2026
+**Status:** Implementation and local contract tests verified; live-account exit gate pending
+
+- `plans/PHASE_06_GMAIL_SYNC.md` implementation tasks P06-01 through P06-11 are present and checked.
+- `tests/unit/test_phase6_gmail.py` passes, covering OAuth state/account binding, credential lifecycle, push identity, normalization, cursor/recovery behavior, disconnect handling, and bounded retries.
+- The deployed API rejects unauthenticated integration-health access with HTTP 401 and exposes the authenticated integration-health route.
+
+The remaining external evidence is a controlled authorized Gmail account observation covering read/search, watch/push, exact approved send, reconnect/disconnect, and the full proposal journey. No live-account success is inferred from fixtures or local tests.

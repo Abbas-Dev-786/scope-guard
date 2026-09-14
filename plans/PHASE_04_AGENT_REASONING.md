@@ -1,7 +1,7 @@
 # Phase 04 — Bounded Strands reasoning and evaluation
 
-**Status:** Complete | **Required:** Yes | **Depends on:** Phase 03  
-**Owns:** R06 and analytical R07/R18; A05, A07, A19, A23, A28  
+**Status:** Complete | **Required:** Yes | **Depends on:** Phase 03
+**Owns:** R06 and analytical R07/R18; A05, A07, A19, A23, A28
 **References:** [Master](MASTER_PLAN.md), [TDD](../docs/TDD.md) §19–29, §49–56, §62, §70–74.
 
 ## Objective and boundary
@@ -23,13 +23,13 @@ Turn confirmed scope and authorized evidence into a supported, explainable propo
 - [x] P04-11 Create at least 120 labeled contract-linked synthetic cases, split 60 development/60 held-out by contract/project. Include all five canonical classifications and at least 20 positive additional-scope and 20 nonbillable held-out cases. Freeze the split before tuning.
 - [x] P04-12 Run three held-out evaluations with pinned versions. Report per-run counts/confusion matrices, proposal precision, positive recall, abstentions, reference validity, latency and cost. Preserve failures and rerun after relevant changes.
 
-## Implementation state - 8 September 2026
+## Implementation state - 14 September 2026
 
 Phase 4 is implemented across migrations `0008_phase4_analysis_context` and `0009_phase4_decisions_evaluation`. The bounded workflow persists canonical context, agent runs, immutable scope assessments, durable tenant/deployment token and cost reservations, sanitized decision inbox rows, immutable draft revisions, and pinned evaluation reports. Strict Pydantic schemas validate role outputs; one repair is allowed. The Scope, Evidence, Impact, Change Order, and Communication roles are isolated to read-only capabilities. Evidence gating, accepted-amendment overturns, contradiction clarification, cold-start effort ranges, frozen deterministic INR pricing/scheduling, tool-manifest fail-closed checks, decision/evidence/trace routes, and the 120-case held-out evaluation harness are implemented.
 
-The Phase 4 implementation gates are complete. Phase 5 owns freelancer approval, immutable change-order approval, provider sending, and client review.
+The Phase 4 implementation gates and live Bedrock quality evaluation are complete. The non-oracle fixture harness, durable budget enforcement, and three pinned Bedrock runs are verified. Phase 5 owns freelancer approval, immutable change-order approval, provider sending, and client review.
 
-The development PostgreSQL container runs migration `0009_phase4_decisions_evaluation` at `head`; Alembic reports no drift and the PostgreSQL foundation suite passes (4 tests).
+The development PostgreSQL container runs migration `0014_payment_webhook_async` at `head`; Alembic reports no drift and the PostgreSQL foundation suite passes (4 tests).
 
 Evidence: [Phase 4 verification](../docs/implementation-evidence/phase-04-agent-reasoning.md).
 

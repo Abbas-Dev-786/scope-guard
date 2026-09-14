@@ -8,6 +8,24 @@ Parameters:
     Type: String
   BedrockModelId:
     Type: String
+  ModelPriceVersion:
+    Type: String
+    Default: aws-bedrock-nova-lite-v1-2026-08-01
+  ModelPriceReviewedAt:
+    Type: String
+    Default: '2026-09-14T00:00:00Z'
+  ModelPriceMaxAgeDays:
+    Type: Number
+    Default: 30
+  ModelInputPriceMinorPer1K:
+    Type: Number
+    Default: 60
+  ModelOutputPriceMinorPer1K:
+    Type: Number
+    Default: 240
+  MaxModelCostMinorPerDay:
+    Type: Number
+    Default: 10000000
   EnvironmentName:
     Type: String
     Default: staging
@@ -154,8 +172,13 @@ Resources:
   ProxySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ScopeGuard staging RDS Proxy egress
+      GroupDescription: ScopeGuard staging RDS Proxy ingress from Lambda
       VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -263,7 +286,6 @@ Resources:
       IdleClientTimeout: 1800
   DatabaseProxyTargetGroup:
     Type: AWS::RDS::DBProxyTargetGroup
-    DependsOn: DatabaseProxy
     Properties:
       DBProxyName: !Ref DatabaseProxy
       TargetGroupName: default
@@ -293,7 +315,7 @@ Resources:
                 Action: [ec2:CreateNetworkInterface, ec2:DescribeNetworkInterfaces, ec2:DeleteNetworkInterface, ec2:AssignPrivateIpAddresses, ec2:UnassignPrivateIpAddresses]
                 Resource: '*'
               - Effect: Allow
-                Action: [s3:GetObject, s3:PutObject, s3:HeadObject]
+                Action: [s3:GetObject, s3:PutObject]
                 Resource: !Sub arn:${AWS::Partition}:s3:::${EvidenceBucketName}/*
               - Effect: Allow
                 Action: s3:ListBucket
@@ -332,7 +354,7 @@ Resources:
           SCOPEGUARD_ENVIRONMENT: !Ref EnvironmentName
           SCOPEGUARD_DEPLOYMENT_REVISION: !Ref DeploymentRevision
           SCOPEGUARD_AWS_REGION: !Ref AWS::Region
-          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseProxy.Endpoint}:5432/${DatabaseName}?sslmode=require'
           SCOPEGUARD_COGNITO_REGION: !Ref AWS::Region
           SCOPEGUARD_COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           SCOPEGUARD_COGNITO_CLIENT_ID: !Ref CognitoClientId
@@ -340,6 +362,12 @@ Resources:
           SCOPEGUARD_CONTRACT_OBJECT_BUCKET: !Ref EvidenceBucketName
           SCOPEGUARD_CONTRACT_OBJECT_KMS_KEY_ARN: !Ref DataKeyArn
           SCOPEGUARD_BEDROCK_MODEL_ID: !Ref BedrockModelId
+          SCOPEGUARD_MODEL_PRICE_VERSION: !Ref ModelPriceVersion
+          SCOPEGUARD_MODEL_PRICE_REVIEWED_AT: !Ref ModelPriceReviewedAt
+          SCOPEGUARD_MODEL_PRICE_MAX_AGE_DAYS: !Ref ModelPriceMaxAgeDays
+          SCOPEGUARD_MODEL_INPUT_PRICE_MINOR_PER_1K: !Ref ModelInputPriceMinorPer1K
+          SCOPEGUARD_MODEL_OUTPUT_PRICE_MINOR_PER_1K: !Ref ModelOutputPriceMinorPer1K
+          SCOPEGUARD_MAX_MODEL_COST_MINOR_PER_DAY: !Ref MaxModelCostMinorPerDay
           SCOPEGUARD_CAPABILITY_ENCRYPTION_KEY: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:capability_encryption_key}}'
           SCOPEGUARD_GMAIL_CLIENT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_id}}'
           SCOPEGUARD_GMAIL_CLIENT_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_secret}}'
@@ -378,7 +406,13 @@ Resources:
           SCOPEGUARD_AWS_REGION: !Ref AWS::Region
           SCOPEGUARD_EVENT_BUS_NAME: !Ref EventBusName
           SCOPEGUARD_BEDROCK_MODEL_ID: !Ref BedrockModelId
-          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+          SCOPEGUARD_MODEL_PRICE_VERSION: !Ref ModelPriceVersion
+          SCOPEGUARD_MODEL_PRICE_REVIEWED_AT: !Ref ModelPriceReviewedAt
+          SCOPEGUARD_MODEL_PRICE_MAX_AGE_DAYS: !Ref ModelPriceMaxAgeDays
+          SCOPEGUARD_MODEL_INPUT_PRICE_MINOR_PER_1K: !Ref ModelInputPriceMinorPer1K
+          SCOPEGUARD_MODEL_OUTPUT_PRICE_MINOR_PER_1K: !Ref ModelOutputPriceMinorPer1K
+          SCOPEGUARD_MAX_MODEL_COST_MINOR_PER_DAY: !Ref MaxModelCostMinorPerDay
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseProxy.Endpoint}:5432/${DatabaseName}?sslmode=require'
           SCOPEGUARD_CAPABILITY_ENCRYPTION_KEY: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:capability_encryption_key}}'
           SCOPEGUARD_GMAIL_CLIENT_ID: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_id}}'
           SCOPEGUARD_GMAIL_CLIENT_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretArn}:SecretString:gmail_client_secret}}'
@@ -430,7 +464,7 @@ Resources:
           SCOPEGUARD_ENVIRONMENT: !Ref EnvironmentName
           SCOPEGUARD_DEPLOYMENT_REVISION: !Ref DeploymentRevision
           SCOPEGUARD_AWS_REGION: !Ref AWS::Region
-          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseCluster.Endpoint.Address}:5432/${DatabaseName}?sslmode=require'
+          SCOPEGUARD_DATABASE_URL: !Sub 'postgresql+psycopg://{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}:{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}@${DatabaseProxy.Endpoint}:5432/${DatabaseName}?sslmode=require'
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:

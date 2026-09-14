@@ -10,6 +10,16 @@ type Review = {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+async function readApiResponse<T extends Record<string, unknown> = Record<string, unknown>>(response: Response): Promise<T & { message?: string; raw?: string }> {
+  const raw = await response.text();
+  if (!raw) return {} as T & { message?: string; raw?: string };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return { ...parsed, raw } as T & { message?: string; raw?: string };
+  } catch {
+    return { raw } as T & { message?: string; raw?: string };
+  }
+}
 
 export default function ClientReviewPage() {
   const [review, setReview] = useState<Review | null>(null);
@@ -18,6 +28,7 @@ export default function ClientReviewPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paymentLink, setPaymentLink] = useState("");
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get("t");
@@ -26,12 +37,12 @@ export default function ClientReviewPage() {
     void (async () => {
       try {
         const exchanged = await fetch(`${API_BASE}/public/v1/capabilities/exchange`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
-        const exchangeBody = await exchanged.json();
-        if (!exchanged.ok) throw new Error(exchangeBody.message ?? "This approval link is no longer valid.");
+        const exchangeBody = await readApiResponse<{ csrf_token: string; change_order_id: string }>(exchanged);
+        if (!exchanged.ok) throw new Error(exchangeBody.message ?? exchangeBody.raw ?? `Approval exchange failed (${exchanged.status}).`);
         setCsrf(exchangeBody.csrf_token);
         const response = await fetch(`${API_BASE}/public/v1/change-orders/${exchangeBody.change_order_id}`, { credentials: "include", cache: "no-store" });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message ?? "The proposal could not be loaded.");
+        const body = await readApiResponse<Review>(response);
+        if (!response.ok) throw new Error(body.message ?? body.raw ?? `The proposal could not be loaded (${response.status}).`);
         setReview(body);
       } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load this proposal."); }
     })();
@@ -42,7 +53,8 @@ export default function ClientReviewPage() {
       await new Promise((resolve) => setTimeout(resolve, attempt < 20 ? 3000 : 15000));
       const response = await fetch(`${API_BASE}/public/v1/change-orders/${review?.change_order_id}/receipt`, { credentials: "include", cache: "no-store" });
       if (!response.ok) continue;
-      const receipt = await response.json() as { payment_status?: string };
+      const receipt = await response.json() as { payment_status?: string; payment_link_url?: string | null };
+      if (receipt.payment_link_url) setPaymentLink(receipt.payment_link_url);
       setMessage(`Approved. Receipt status: ${receipt.payment_status ?? "CREATION_PENDING"}.`);
       if (receipt.payment_status && receipt.payment_status !== "CREATION_PENDING") return;
     }
@@ -59,8 +71,8 @@ export default function ClientReviewPage() {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf, "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(body),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message ?? "The proposal action failed.");
+      const result = await readApiResponse<{ status: string }>(response);
+      if (!response.ok) throw new Error(result.message ?? result.raw ?? `The proposal action failed (${response.status}).`);
       setMessage(path === "approve" ? "Approved. Your receipt is being prepared." : path === "reject" ? "The proposal was declined." : "Changes requested. The freelancer will review them.");
       if (path === "approve") void pollReceipt();
       setReview({ ...review, status: result.status });
@@ -82,5 +94,6 @@ export default function ClientReviewPage() {
       <div className="row"><button disabled={busy} onClick={() => void decide("approve")}>Approve proposal</button><button disabled={busy} onClick={() => void decide("request-changes")}>Request changes</button><button className="danger" disabled={busy} onClick={() => void decide("reject")}>Decline</button></div>
     </section>}
     {message && <p className="success">{message}</p>}
+    {paymentLink && <section className="card stack"><h2>Payment link</h2><p>Your payment link is ready.</p><a className="button" href={paymentLink} target="_blank" rel="noreferrer">Open payment link</a></section>}
   </>;
 }

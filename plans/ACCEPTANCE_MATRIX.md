@@ -1,7 +1,7 @@
 # ScopeGuard implementation acceptance matrix
 
-**Baseline:** PRD/TDD v1.1 and architecture resolution register, 7 September 2026  
-**Implementation verification:** Phase 01 foundation evidence recorded; full cross-phase acceptance remains pending  
+**Baseline:** PRD/TDD v1.1 and architecture resolution register, 7 September 2026
+**Implementation verification:** Phase 00�07 implementation is synchronized; 79 phase tasks are complete and 10 remain open. Provider/deployed acceptance remains pending where explicitly marked.
 **Purpose:** Assign a primary implementation owner and proof for all R01–R18 requirements and A01–A32 review cases.
 
 The [master plan](MASTER_PLAN.md) controls sequencing. Full scenarios remain authoritative in [REVIEW_RESOLUTION.md](../docs/REVIEW_RESOLUTION.md). Findings 1–32 map respectively to A01–A32. A primary phase implements the core behavior; collaborating phases extend it, and [phase 09](PHASE_09_RELEASE.md) verifies the complete release. A row passes only when every required scenario variant passes.
@@ -29,7 +29,7 @@ The [master plan](MASTER_PLAN.md) controls sequencing. Full scenarios remain aut
 | R17 Early/reproducible deployment | 00 / P00-01–10; 09 / P09-09 | infra, identities/network, pinned runtime/model/database/provider setup | A21, A29 |
 | R18 Evaluation/demo | 09 / P09-01–13; 04 / P04-11–12 | held-out evaluation, adversarial/fault/e2e suites, release assets | A28, A31, A32 |
 
-Current state: R01, the Phase 01 portions of R02/R07/R16, and the local scaffold for R17 have implementation evidence. Full requirement acceptance remains pending until their later phases and deployed/provider checks pass.
+Current state: Phases 00�07 implementation, migrations, automated tests, staging deployment, and the live Phase 04 Bedrock evaluation have evidence. Full requirement acceptance remains pending for the scenario rows below, including provider/deployed authorization and cloud-recreation variants.
 
 ## 2. Acceptance ownership and required evidence
 
@@ -64,7 +64,7 @@ Planned test paths below are targets for implementation, not files claimed to ex
 | A25 Revenue meaning | 08 / P08-05 | 05, 07, 09 | Acceptance posts approved once; independent collection/reversal; duplicates/revisions/environment isolation reconcile | Pending |
 | A26 Notification/receipt handoff | 05 / P05-12 | 00, 07, 09 | Browser-closed verified-address delivery; delayed link appears through read-only receipt without duplicate create | Pending |
 | A27 Commercial/calendar policy | 01 / P01-06–07 | 03–05, 07–08, 09 | Unsupported terms manual; explicit tax; due UTC instant across DST/weekends and conditional work start | Foundation implemented; full gate pending |
-| A28 Evaluation/budgets | 04 / P04-03, P04-07–08, P04-11–12 | 02, 09 | 120-case split/three held-out runs; malformed/loop/timeout/budget bounds; deterministic collection continues | Phase 04 implemented and unit-verified |
+| A28 Evaluation/budgets | 04 / P04-03, P04-07–08, P04-11–12 | 02, 09 | 120-case split/three held-out runs; malformed/loop/timeout/budget bounds; deterministic collection continues | Phase 04 implemented; live three-run Bedrock evaluation recorded |
 | A29 Deployed reproducibility | 00 / P00-02–10 | 01–08, 09 | Clean declared setup proves final Cognito/API/AgentCore/DB/model/provider/SES trace with pinned identities/versions | Pending |
 | A30 Integrity/privacy/restore | 08 / P08-07–12 | 01–03, 05, 09 | Invalid relations/duplicate action/audit rewrite rejected; export/delete; pre-deletion restore reapplies tombstones | Pending |
 | A31 Operational recovery | 09 / P09-05–09 | 00, 02, 06–08 | Scheduler/connector outage alarms, measured RPO/RTO, compatible rollback and no resurrected external writes | Pending |

@@ -1,6 +1,8 @@
 # ScopeGuard
 
-ScopeGuard is an evidence-backed scope-change workflow for independent software freelancers. The repository implements the Phase 00–06 local domain, approval, provider-adapter, and Gmail lifecycle paths. AWS/provider live acceptance remains open until deployed endpoints and controlled real-account observations are recorded.
+ScopeGuard is an evidence-backed scope-change workflow for independent software freelancers. The repository implements the Phase 00–07 domain, approval, provider-adapter, Gmail lifecycle, and Razorpay Test Mode collection paths. Staging API deployment and protected-route checks are verified; live-provider acceptance remains open until controlled real-account observations are recorded.
+
+For the remaining deployed-provider evidence steps, use the [live-gate operator runbook](docs/implementation-evidence/live-gate-operator-runbook.md).
 
 ## Prerequisites
 
@@ -54,8 +56,8 @@ To include PostgreSQL-specific checks, point `SCOPEGUARD_DATABASE_URL` at a migr
 
 ## Current boundaries
 
-Implemented locally: uv-managed Python environment, FastAPI/Lambda entry point, Cognito JWT verifier, PKCE sign-in callback, verified-email onboarding, tenant-scoped foundational APIs, PostgreSQL migration, immutable preference/calendar records, exact money/terms utilities, connector deny-by-default policy, Next.js management screens, a linted CloudFormation foundation, and an AgentCore/Strands readiness entry point.
+Implemented: uv-managed Python environment, FastAPI/Lambda entry point, Cognito JWT verifier, PKCE sign-in callback, verified-email onboarding, tenant-scoped foundational APIs, PostgreSQL migrations through Phase 07, immutable preference/calendar/approval/payment records, exact money/terms utilities, connector deny-by-default policy, Next.js management/proposal/client-review screens, Gmail lifecycle services, Razorpay Test Mode adapter/reconciliation, and a staging Lambda deployment.
 
-Pending actual-account evidence: AWS deployment and region intersection, AgentCore model invocation, deployed Cognito callback, private Aurora/RDS Proxy path, Gmail OAuth/read/send/watch, SES delivery, Razorpay Test Mode link/reconciliation, and end-to-end traces. These remain release blockers.
+Pending evidence: controlled Gmail OAuth/read/send/watch and SES receipt, one ScopeGuard-created Razorpay Test Mode link paid and reconciled through its signed webhook, a three-run held-out live evaluation, and clean-environment recreation. These remain release gates; fixtures and unrelated provider links do not close them.
 
 See [plans/README.md](plans/README.md), [docs/PRD.md](docs/PRD.md), [docs/TDD.md](docs/TDD.md), and [Phase 0/1 evidence](docs/implementation-evidence/phase-01-foundation.md).

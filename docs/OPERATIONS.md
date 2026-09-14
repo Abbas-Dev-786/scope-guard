@@ -1,8 +1,8 @@
 # ScopeGuard Operations and Recovery
 
-**Version:** 1.0  
-**Date:** 7 September 2026  
-**Status:** Runbook and release targets specified; environment not yet provisioned
+**Version:** 1.1
+**Date:** 14 September 2026
+**Status:** Staging runtime and local clean database provisioned; live provider, private-cloud authorization, and full recreation gates remain open
 
 This document supports PRD R04 and R11–R18 and TDD §58–78. Defaults are initial engineering targets for the test environment, not achieved service claims or provider guarantees.
 
@@ -12,18 +12,18 @@ Complete these fields with observed evidence before full implementation depends 
 
 | Item | Required record | Current status |
 | --- | --- | --- |
-| AWS region | One supported region satisfying chosen runtime/model/database requirements; data location recorded | Pending |
-| Runtime/dependencies | Python, Strands, AgentCore tooling and frontend versions; lockfiles and image digest | Pending |
-| Database | Aurora engine/major matched locally, migration tool, proxy/pool limits | Pending |
-| Model | Exact IDs, access, structured-output/tool tests, price configuration date, token and currency ceilings | Pending |
-| Network | API/runtime/DB identities, private DB route, public provider egress, security groups | Pending |
+| AWS region | Nova Lite active in both candidate regions; staging deployed in us-east-1; Aurora major/proxy intersection remains conditional | Partial |
+| Runtime/dependencies | Python/Node/pnpm/uv locks, AgentCore runtime, staging image revision 42, and production build verified | Verified for staging |
+| Database | Fresh PostgreSQL 16.6 migrated through 0014 with no drift; private Aurora/proxy limits remain unverified | Partial |
+| Model | Nova Lite access, structured output, three-run evaluation, reviewed prices and staging ceiling verified | Verified for staging |
+| Network | API health/readiness and public model/provider egress verified; private DB route/security matrix remains open | Partial |
 | Gmail | OAuth scopes and account identity, watch/push authentication, sync, read and send proof | Pending |
-| Razorpay | Merchant/test environment, provider-reference lookup, webhook/correlation proof, test-link count | Pending |
-| SES | Verified sender and permitted recipients/account sending status; actual notification delivery | Pending |
-| Hosting/Cognito | Deployed frontend/API session and object authorization, callback URLs, cookie/CSRF behavior | Pending |
-| Telemetry | One end-to-end correlation including model/tool/action results, redaction checked | Pending |
+| Razorpay | Test Mode account read and provider lookup accepted; ScopeGuard-owned link/webhook correlation remains unproven | Partial |
+| SES | Verified sender and sandbox acceptance observed; inbox delivery remains unverified | Partial |
+| Hosting/Cognito | Pool/client/callback and protected-route rejection verified; deployed owner/object authorization remains open | Partial |
+| Telemetry | Request/audit correlation and AgentCore CloudWatch/X-Ray enabled; full redacted end-to-end trace remains open | Partial |
 | GitHub/Slack | Eligibility and approved read manifest if P1 integration is enabled | Optional; pending |
-| Data lifecycle | Encryption, retention, backup/restore, deletion and access roles | Pending |
+| Data lifecycle | KMS/private S3/log retention and immutable-role declarations verified; backup/restore/deletion exercise remains open | Partial |
 
 Changing region/model/provider path requires updating the readiness record and affected acceptance tests. Do not commit credentials, email contents or bearer tokens in this record.
 

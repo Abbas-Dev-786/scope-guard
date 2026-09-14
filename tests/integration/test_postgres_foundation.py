@@ -40,7 +40,7 @@ def test_migration_head_and_composite_ownership() -> None:
     with postgres_session() as session:
         assert (
             session.scalar(select(text("version_num")).select_from(text("alembic_version")))
-            == "0009_phase4_decisions_evaluation"
+            == "0014_payment_webhook_async"
         )
         tenant_a = User(
             id=uuid.uuid4(),
@@ -173,6 +173,7 @@ def test_postgres_money_constraint_rejects_out_of_bounds_contract() -> None:
         with pytest.raises(IntegrityError):
             session.flush()
         session.rollback()
+
 
 def test_audit_records_are_immutable() -> None:
     with postgres_session() as session:

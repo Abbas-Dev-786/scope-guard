@@ -15,7 +15,7 @@ function Callback() {
   useEffect(() => {
     if (inputError || !code || !state) return;
     completeCognitoSignIn(code, state)
-      .then(() => router.replace("/onboarding"))
+      .then(() => { const next = sessionStorage.getItem("scopeguard_after_signin") || "/onboarding"; sessionStorage.removeItem("scopeguard_after_signin"); router.replace(next); })
       .catch((caught) => setExchangeError(caught instanceof Error ? caught.message : "Unable to complete sign-in"));
   }, [code, inputError, router, state]);
   const error = inputError || exchangeError;

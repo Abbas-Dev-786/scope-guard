@@ -1,4 +1,5 @@
 """Deterministic payment-intent, link, webhook, and reconciliation behavior."""
+
 from __future__ import annotations
 
 import hashlib
@@ -23,6 +24,7 @@ from services.domain.models import (
     PaymentLinkAttempt,
     PaymentObservation,
     PaymentRequest,
+    PaymentWebhookIngress,
     ProposalRevision,
     utc_now,
 )
@@ -63,21 +65,31 @@ class PaymentDispatchResult(Protocol):
 
 def payment_reference(payment_request_id: UUID, attempt_number: int = 1) -> str:
     """Return a stable provider reference within Razorpay's 40-character limit."""
-    return REFERENCE_PREFIX + hashlib.sha256(f"{payment_request_id}:{attempt_number}".encode("ascii")).hexdigest()[:36]
+    return (
+        REFERENCE_PREFIX
+        + hashlib.sha256(f"{payment_request_id}:{attempt_number}".encode("ascii")).hexdigest()[:36]
+    )
 
 
-def read_payment_request(session: Session, context: TrustedContext, *, payment_request_id: UUID, job_id: UUID | None = None) -> dict[str, object]:
+def read_payment_request(
+    session: Session,
+    context: TrustedContext,
+    *,
+    payment_request_id: UUID,
+    job_id: UUID | None = None,
+) -> dict[str, object]:
     payment = _payment(session, context, payment_request_id)
     link = _active_link(session, payment)
-    collected = sum(
-        int(value or 0)
-        for value in session.scalars(
-            select(PaymentAttempt.amount_minor).where(
-                PaymentAttempt.link_attempt_id == link.id if link else False,
-                PaymentAttempt.captured.is_(True),
+    collected = 0
+    if link is not None:
+        collected = sum(
+            session.scalars(
+                select(PaymentAttempt.amount_minor).where(
+                    PaymentAttempt.link_attempt_id == link.id,
+                    PaymentAttempt.captured.is_(True),
+                )
             )
         )
-    )
     return {
         "id": payment.id,
         "project_id": payment.project_id,
@@ -97,7 +109,10 @@ def read_payment_request(session: Session, context: TrustedContext, *, payment_r
         "job_id": job_id,
     }
 
-def _payment(session: Session, context: TrustedContext, payment_request_id: UUID, *, lock: bool = False) -> PaymentRequest:
+
+def _payment(
+    session: Session, context: TrustedContext, payment_request_id: UUID, *, lock: bool = False
+) -> PaymentRequest:
     query = select(PaymentRequest).where(
         PaymentRequest.id == payment_request_id,
         PaymentRequest.tenant_id == context.tenant_id,
@@ -122,7 +137,9 @@ def _revision(session: Session, payment: PaymentRequest) -> ProposalRevision:
     return revision
 
 
-def _transition(payment: PaymentRequest, target: PaymentStatus, *, reason: str | None = None) -> None:
+def _transition(
+    payment: PaymentRequest, target: PaymentStatus, *, reason: str | None = None
+) -> None:
     current = PaymentStatus(payment.status)
     if current is target:
         return
@@ -131,7 +148,11 @@ def _transition(payment: PaymentRequest, target: PaymentStatus, *, reason: str |
     if current is PaymentStatus.PAID and target is not PaymentStatus.REVERSED:
         return
     if target is PaymentStatus.REVIEW_REQUIRED:
-        if current not in {PaymentStatus.CREATION_PENDING, PaymentStatus.PENDING, PaymentStatus.REVIEW_REQUIRED}:
+        if current not in {
+            PaymentStatus.CREATION_PENDING,
+            PaymentStatus.PENDING,
+            PaymentStatus.REVIEW_REQUIRED,
+        }:
             raise ConflictError(f"Payment cannot enter review from {current.value}")
     else:
         transitions = {
@@ -177,16 +198,29 @@ def _action_for_payment(session: Session, payment: PaymentRequest) -> ExternalAc
     )
 
 
-def prepare_payment_link(session: Session, context: TrustedContext, *, payment_request_id: UUID) -> tuple[ExternalAction, object | None]:
+def prepare_payment_link(
+    session: Session, context: TrustedContext, *, payment_request_id: UUID
+) -> tuple[ExternalAction, object | None]:
     payment = _payment(session, context, payment_request_id, lock=True)
     if payment.status not in {PaymentStatus.CREATION_PENDING.value, PaymentStatus.PENDING.value}:
         raise ConflictError("Payment request is not eligible for link creation")
     existing_link = _active_link(session, payment)
     if existing_link is not None:
-        action = session.get(ExternalAction, existing_link.action_id) if existing_link.action_id else None
+        action = (
+            session.get(ExternalAction, existing_link.action_id)
+            if existing_link.action_id
+            else None
+        )
         if action is not None:
             return action, None
-    attempt_number = (session.scalar(select(func.max(PaymentLinkAttempt.attempt_number)).where(PaymentLinkAttempt.payment_request_id == payment.id)) or 0) + 1
+    attempt_number = (
+        session.scalar(
+            select(func.max(PaymentLinkAttempt.attempt_number)).where(
+                PaymentLinkAttempt.payment_request_id == payment.id
+            )
+        )
+        or 0
+    ) + 1
     if attempt_number > 3:
         raise ConflictError("Payment link replacement limit has been reached")
     revision = _revision(session, payment)
@@ -217,7 +251,11 @@ def prepare_payment_link(session: Session, context: TrustedContext, *, payment_r
         action_key=f"payment-link-create:{payment.id}:{attempt_number}",
         provider="razorpay",
         operation="payment_links.create",
-        approved_payload={**payload, "provider_account_id": account_id, "provider_environment": TEST_ENVIRONMENT},
+        approved_payload={
+            **payload,
+            "provider_account_id": account_id,
+            "provider_environment": TEST_ENVIRONMENT,
+        },
     )
     attempt = session.scalar(
         select(PaymentLinkAttempt).where(
@@ -254,13 +292,19 @@ def prepare_payment_link(session: Session, context: TrustedContext, *, payment_r
 
 
 def _payment_link_attempt(session: Session, action: ExternalAction) -> PaymentLinkAttempt:
-    attempt = session.scalar(select(PaymentLinkAttempt).where(PaymentLinkAttempt.action_id == action.id).with_for_update())
+    attempt = session.scalar(
+        select(PaymentLinkAttempt)
+        .where(PaymentLinkAttempt.action_id == action.id)
+        .with_for_update()
+    )
     if attempt is None:
         raise ConflictError("Payment link attempt is missing")
     return attempt
 
 
-def _validate_link_response(attempt: PaymentLinkAttempt, response: Mapping[str, object]) -> tuple[str, str, str, str | None]:
+def _validate_link_response(
+    attempt: PaymentLinkAttempt, response: Mapping[str, object]
+) -> tuple[str, str, str, str | None]:
     provider_id = str(response.get("id") or "").strip()
     short_url = str(response.get("short_url") or "").strip()
     currency = str(response.get("currency") or "").strip().upper()
@@ -269,14 +313,24 @@ def _validate_link_response(attempt: PaymentLinkAttempt, response: Mapping[str, 
     order_id = str(response.get("order_id") or "").strip() or None
     if not provider_id or not short_url:
         raise RazorpayProviderError("razorpay_link_identity_missing")
-    if amount != attempt.amount_minor or currency != attempt.currency or reference != attempt.reference_id:
+    if (
+        amount != attempt.amount_minor
+        or currency != attempt.currency
+        or reference != attempt.reference_id
+    ):
         raise RazorpayProviderError("razorpay_link_terms_mismatch")
     return provider_id, short_url, str(response.get("status") or "created"), order_id
 
 
-def dispatch_payment_link(session: Session, *, action_id: UUID, provider: PaymentProvider | None = None) -> str:
+def dispatch_payment_link(
+    session: Session, *, action_id: UUID, provider: PaymentProvider | None = None
+) -> str:
     action = session.get(ExternalAction, action_id, with_for_update=True)
-    if action is None or action.provider != "razorpay" or action.operation != "payment_links.create":
+    if (
+        action is None
+        or action.provider != "razorpay"
+        or action.operation != "payment_links.create"
+    ):
         raise NotFoundError("Payment link action was not found")
     attempt = _payment_link_attempt(session, action)
     payment = session.get(PaymentRequest, attempt.payment_request_id, with_for_update=True)
@@ -286,13 +340,18 @@ def dispatch_payment_link(session: Session, *, action_id: UUID, provider: Paymen
         return attempt.provider_link_id
     if payment.status not in {PaymentStatus.CREATION_PENDING.value, PaymentStatus.PENDING.value}:
         raise ConflictError("Payment request is no longer eligible for link dispatch")
-    provider = provider or RazorpayProvider.from_settings()
-    if provider.environment != TEST_ENVIRONMENT or provider.account_id != attempt.provider_account_id:
+    provider_client = provider if provider is not None else RazorpayProvider.from_settings()
+    if (
+        provider_client.environment != TEST_ENVIRONMENT
+        or provider_client.account_id != attempt.provider_account_id
+    ):
         raise ConflictError("Razorpay provider identity does not match the frozen payment intent")
     begin_action_dispatch(session, action_id=action.id)
     try:
-        response = provider.create_payment_link(dict(action.approved_payload))
-        provider_id, short_url, provider_status, provider_order_id = _validate_link_response(attempt, response)
+        response = provider_client.create_payment_link(dict(action.approved_payload))
+        provider_id, short_url, provider_status, provider_order_id = _validate_link_response(
+            attempt, response
+        )
     except RazorpayProviderRetryable as exc:
         attempt.status = "UNKNOWN_OUTCOME"
         _transition(payment, PaymentStatus.REVIEW_REQUIRED, reason="provider_request_uncertain")
@@ -319,7 +378,11 @@ def dispatch_payment_link(session: Session, *, action_id: UUID, provider: Paymen
         session,
         action_id=action.id,
         provider_request_id=provider_id,
-        outcome_ref={"provider": "razorpay", "operation": "payment_links.create", "provider_link_id": provider_id},
+        outcome_ref={
+            "provider": "razorpay",
+            "operation": "payment_links.create",
+            "provider_link_id": provider_id,
+        },
     )
     return provider_id
 
@@ -333,6 +396,166 @@ def _entity(payload: Mapping[str, object], name: str) -> dict[str, object]:
         return {}
     entity = value.get("entity")
     return dict(entity) if isinstance(entity, Mapping) else {}
+
+
+def accept_payment_webhook(
+    session: Session,
+    *,
+    provider_account_id: str,
+    provider_environment: str,
+    provider_event_id: str,
+    event_type: str,
+    payload: dict[str, object],
+    signature_verified: bool,
+    observed_at: datetime | None = None,
+) -> tuple[PaymentWebhookIngress, Job | None]:
+    """Persist an authenticated raw webhook before any business normalization."""
+    if provider_environment != TEST_ENVIRONMENT:
+        raise ValidationError("Only Razorpay Test Mode webhooks are accepted")
+    if not signature_verified:
+        raise ValidationError("Razorpay webhook signature is invalid")
+    account_id = provider_account_id.strip()
+    kind = event_type.strip()
+    if not account_id or not kind:
+        raise ValidationError("Razorpay webhook identity is incomplete")
+    event_id = provider_event_id.strip() or canonical_sha256(payload)
+    existing = session.scalar(
+        select(PaymentWebhookIngress).where(
+            PaymentWebhookIngress.provider_account_id == account_id,
+            PaymentWebhookIngress.provider_environment == provider_environment,
+            PaymentWebhookIngress.provider_event_id == event_id,
+        )
+    )
+    if existing is not None:
+        return existing, None
+
+    ingress = PaymentWebhookIngress(
+        provider_account_id=account_id,
+        provider_environment=provider_environment,
+        provider_event_id=event_id,
+        event_type=kind,
+        signature_verified=True,
+        raw_payload=payload,
+        received_at=observed_at or utc_now(),
+    )
+    session.add(ingress)
+    session.flush()
+
+    link = _entity(payload, "payment_link")
+    link_id = str(link.get("id") or "").strip()
+    reference_id = str(link.get("reference_id") or "").strip()
+    attempt = None
+    if link_id:
+        attempt = session.scalar(
+            select(PaymentLinkAttempt).where(
+                PaymentLinkAttempt.provider_link_id == link_id,
+                PaymentLinkAttempt.provider_account_id == account_id,
+                PaymentLinkAttempt.provider_environment == provider_environment,
+            )
+        )
+    if attempt is None and reference_id:
+        attempt = session.scalar(
+            select(PaymentLinkAttempt)
+            .where(
+                PaymentLinkAttempt.reference_id == reference_id,
+                PaymentLinkAttempt.provider_account_id == account_id,
+                PaymentLinkAttempt.provider_environment == provider_environment,
+            )
+            .order_by(PaymentLinkAttempt.attempt_number.desc())
+            .limit(1)
+        )
+
+    job = None
+    if attempt is not None:
+        job = enqueue_job(
+            session,
+            tenant_id=attempt.tenant_id,
+            project_id=attempt.project_id,
+            kind="payment.webhook.normalize",
+            payload_ref={"ingress_id": str(ingress.id)},
+            correlation_id=uuid4(),
+        )
+    return ingress, job
+
+
+def normalize_payment_webhook(
+    session: Session,
+    *,
+    ingress_id: UUID,
+    expected_tenant_id: UUID | None = None,
+) -> PaymentObservation:
+    ingress = session.get(PaymentWebhookIngress, ingress_id, with_for_update=True)
+    if ingress is None:
+        raise NotFoundError("Payment webhook ingress was not found")
+    if expected_tenant_id is not None:
+        link = _entity(ingress.raw_payload, "payment_link")
+        link_id = str(link.get("id") or "").strip()
+        reference_id = str(link.get("reference_id") or "").strip()
+        statement = select(PaymentLinkAttempt).where(
+            PaymentLinkAttempt.provider_account_id == ingress.provider_account_id,
+            PaymentLinkAttempt.provider_environment == ingress.provider_environment,
+        )
+        if link_id:
+            statement = statement.where(PaymentLinkAttempt.provider_link_id == link_id)
+        elif reference_id:
+            statement = statement.where(PaymentLinkAttempt.reference_id == reference_id)
+        else:
+            raise NotFoundError("Payment webhook target was not found")
+        target = session.scalar(
+            statement.order_by(PaymentLinkAttempt.attempt_number.desc()).limit(1)
+        )
+        if target is None or target.tenant_id != expected_tenant_id:
+            raise NotFoundError("Payment webhook target was not found")
+    if ingress.normalization_state == "NORMALIZED" and ingress.observation_id is not None:
+        observation = session.get(PaymentObservation, ingress.observation_id)
+        if observation is None:
+            raise ConflictError("Normalized payment webhook observation is missing")
+        if expected_tenant_id is not None and observation.tenant_id != expected_tenant_id:
+            raise NotFoundError("Payment webhook target was not found")
+        return observation
+    try:
+        observation = observe_payment_event(
+            session,
+            provider_account_id=ingress.provider_account_id,
+            provider_environment=ingress.provider_environment,
+            provider_event_id=ingress.provider_event_id,
+            event_type=ingress.event_type,
+            payload=ingress.raw_payload,
+            signature_verified=ingress.signature_verified,
+            observed_at=ingress.received_at,
+        )
+    except Exception as exc:
+        ingress.normalization_state = "REVIEW_REQUIRED"
+        ingress.last_error = type(exc).__name__[:120]
+        session.flush()
+        raise
+    ingress.normalization_state = "NORMALIZED"
+    ingress.observation_id = observation.id
+    ingress.normalized_at = utc_now()
+    ingress.last_error = None
+    session.flush()
+    return observation
+
+
+def normalize_pending_payment_webhooks(session: Session, *, limit: int = 100) -> int:
+    ingress_ids = list(
+        session.scalars(
+            select(PaymentWebhookIngress.id)
+            .where(PaymentWebhookIngress.normalization_state == "PENDING")
+            .order_by(PaymentWebhookIngress.received_at, PaymentWebhookIngress.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    normalized = 0
+    for ingress_id in ingress_ids:
+        try:
+            with session.begin_nested():
+                normalize_payment_webhook(session, ingress_id=ingress_id)
+        except Exception:
+            continue
+        normalized += 1
+    return normalized
 
 
 def observe_payment_event(
@@ -350,7 +573,10 @@ def observe_payment_event(
         raise ValidationError("Only Razorpay Test Mode observations are accepted")
     if not signature_verified:
         raise ValidationError("Razorpay webhook signature is invalid")
-    event_id = provider_event_id.strip() or hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    event_id = (
+        provider_event_id.strip()
+        or hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    )
     existing = session.scalar(
         select(PaymentObservation).where(
             PaymentObservation.provider_account_id == provider_account_id,
@@ -368,14 +594,28 @@ def observe_payment_event(
     order_id = str(payment_entity.get("order_id") or order.get("id") or "").strip() or None
     reference = str(link.get("reference_id") or "").strip() or None
     raw_amount = payment_entity.get("amount", link.get("amount_paid", link.get("amount")))
-    amount = int(raw_amount) if isinstance(raw_amount, int) and not isinstance(raw_amount, bool) else None
-    currency = str(payment_entity.get("currency") or link.get("currency") or "").strip().upper() or None
+    amount = (
+        int(raw_amount)
+        if isinstance(raw_amount, int) and not isinstance(raw_amount, bool)
+        else None
+    )
+    currency = (
+        str(payment_entity.get("currency") or link.get("currency") or "").strip().upper() or None
+    )
     observed_status = str(payment_entity.get("status") or link.get("status") or event_type).strip()
     attempt = None
     if link_id:
-        attempt = session.scalar(select(PaymentLinkAttempt).where(PaymentLinkAttempt.provider_link_id == link_id))
-    request = session.get(PaymentRequest, attempt.payment_request_id) if attempt is not None else None
-    capture_event = event_type.lower() in {"payment_link.paid", "payment.captured", "payment.authorized"}
+        attempt = session.scalar(
+            select(PaymentLinkAttempt).where(PaymentLinkAttempt.provider_link_id == link_id)
+        )
+    request = (
+        session.get(PaymentRequest, attempt.payment_request_id) if attempt is not None else None
+    )
+    capture_event = event_type.lower() in {
+        "payment_link.paid",
+        "payment.captured",
+        "payment.authorized",
+    }
     mismatch = (
         attempt is None
         or attempt.provider_account_id != provider_account_id
@@ -384,11 +624,17 @@ def observe_payment_event(
         or amount != attempt.amount_minor
         or currency != attempt.currency
         or (capture_event and not order_id)
-        or (attempt is not None and attempt.provider_order_id is not None and order_id != attempt.provider_order_id)
+        or (
+            attempt is not None
+            and attempt.provider_order_id is not None
+            and order_id != attempt.provider_order_id
+        )
     )
     payment_attempt = None
     if payment_id:
-        payment_attempt = session.scalar(select(PaymentAttempt).where(PaymentAttempt.provider_payment_id == payment_id))
+        payment_attempt = session.scalar(
+            select(PaymentAttempt).where(PaymentAttempt.provider_payment_id == payment_id)
+        )
     if payment_attempt is None and payment_id:
         payment_attempt = PaymentAttempt(
             tenant_id=request.tenant_id if request else None,
@@ -427,9 +673,15 @@ def observe_payment_event(
         signature_verified=True,
         raw_payload=payload,
         observed_at=observed_at or utc_now(),
-        association_state="ASSOCIATED" if request is not None and attempt is not None else "UNMATCHED",
-        next_retry_at=None if request is not None and attempt is not None else (observed_at or utc_now()) + timedelta(hours=24),
-        associated_at=observed_at or utc_now() if request is not None and attempt is not None else None,
+        association_state="ASSOCIATED"
+        if request is not None and attempt is not None
+        else "UNMATCHED",
+        next_retry_at=None
+        if request is not None and attempt is not None
+        else (observed_at or utc_now()) + timedelta(hours=24),
+        associated_at=observed_at or utc_now()
+        if request is not None and attempt is not None
+        else None,
     )
     session.add(observation)
     session.flush()
@@ -442,7 +694,9 @@ def observe_payment_event(
     lower_event = event_type.lower()
     if capture_event and not mismatch and attempt.provider_order_id is None:
         attempt.provider_order_id = order_id
-    if lower_event in {"payment_link.paid", "payment.captured", "payment.authorized"} and (payment_attempt is None or not payment_attempt.captured):
+    if lower_event in {"payment_link.paid", "payment.captured", "payment.authorized"} and (
+        payment_attempt is None or not payment_attempt.captured
+    ):
         attempt.status = "REVIEW_REQUIRED"
         _transition(request, PaymentStatus.REVIEW_REQUIRED, reason="capture_not_verified")
     elif lower_event in {"payment_link.paid", "payment.captured"}:
@@ -458,7 +712,9 @@ def observe_payment_event(
     return observation
 
 
-def replay_unmatched_payment_observations(session: Session, *, now: datetime | None = None, limit: int = 100) -> int:
+def replay_unmatched_payment_observations(
+    session: Session, *, now: datetime | None = None, limit: int = 100
+) -> int:
     """Associate durable orphan observations after a link or local save becomes visible."""
     current = now or utc_now()
     observations = session.scalars(
@@ -481,11 +737,13 @@ def replay_unmatched_payment_observations(session: Session, *, now: datetime | N
             )
         if attempt is None and observation.reference_id:
             attempt = session.scalar(
-                select(PaymentLinkAttempt).where(
+                select(PaymentLinkAttempt)
+                .where(
                     PaymentLinkAttempt.reference_id == observation.reference_id,
                     PaymentLinkAttempt.provider_account_id == observation.provider_account_id,
                     PaymentLinkAttempt.provider_environment == observation.provider_environment,
-                ).order_by(PaymentLinkAttempt.attempt_number.desc())
+                )
+                .order_by(PaymentLinkAttempt.attempt_number.desc())
             )
         request = session.get(PaymentRequest, attempt.payment_request_id) if attempt else None
         exact = bool(
@@ -496,13 +754,23 @@ def replay_unmatched_payment_observations(session: Session, *, now: datetime | N
             and observation.currency == attempt.currency
         )
         if exact:
+            assert attempt is not None
+            assert request is not None
             observation.tenant_id = request.tenant_id
             observation.project_id = request.project_id
             observation.payment_request_id = request.id
             observation.link_attempt_id = attempt.id
             if observation.provider_payment_id:
-                payment_attempt = session.scalar(select(PaymentAttempt).where(PaymentAttempt.provider_payment_id == observation.provider_payment_id))
-                if payment_attempt is None and observation.amount_minor is not None and observation.currency:
+                payment_attempt = session.scalar(
+                    select(PaymentAttempt).where(
+                        PaymentAttempt.provider_payment_id == observation.provider_payment_id
+                    )
+                )
+                if (
+                    payment_attempt is None
+                    and observation.amount_minor is not None
+                    and observation.currency
+                ):
                     payment_attempt = PaymentAttempt(
                         tenant_id=request.tenant_id,
                         project_id=request.project_id,
@@ -524,15 +792,24 @@ def replay_unmatched_payment_observations(session: Session, *, now: datetime | N
             observation.associated_at = current
             observation.next_retry_at = None
             capture = observation.event_type.lower() in {"payment_link.paid", "payment.captured"}
-            if capture and observation.payment_attempt_id is not None and observation.amount_minor == request.total_minor:
+            if (
+                capture
+                and observation.payment_attempt_id is not None
+                and observation.amount_minor == request.total_minor
+            ):
                 if attempt.provider_order_id is None:
                     attempt.provider_order_id = observation.provider_order_id
-                if observation.provider_order_id and attempt.provider_order_id == observation.provider_order_id:
+                if (
+                    observation.provider_order_id
+                    and attempt.provider_order_id == observation.provider_order_id
+                ):
                     attempt.status = "CREATED"
                     _transition(request, PaymentStatus.PAID)
             elif capture:
                 attempt.status = "REVIEW_REQUIRED"
-                _transition(request, PaymentStatus.REVIEW_REQUIRED, reason="unmatched_capture_mismatch")
+                _transition(
+                    request, PaymentStatus.REVIEW_REQUIRED, reason="unmatched_capture_mismatch"
+                )
             associated += 1
         elif observation.next_retry_at is not None and current >= observation.next_retry_at:
             observation.association_state = "MANUAL_REVIEW"
@@ -541,7 +818,13 @@ def replay_unmatched_payment_observations(session: Session, *, now: datetime | N
     return associated
 
 
-def reconcile_payment_request(session: Session, context: TrustedContext, *, payment_request_id: UUID, provider: PaymentProvider | None = None) -> PaymentObservation:
+def reconcile_payment_request(
+    session: Session,
+    context: TrustedContext,
+    *,
+    payment_request_id: UUID,
+    provider: PaymentProvider | None = None,
+) -> PaymentObservation:
     payment = _payment(session, context, payment_request_id, lock=True)
     attempt = session.scalar(
         select(PaymentLinkAttempt)
@@ -550,18 +833,19 @@ def reconcile_payment_request(session: Session, context: TrustedContext, *, paym
         .limit(1)
         .with_for_update()
     )
-    provider = provider or RazorpayProvider.from_settings()
-    if provider.environment != TEST_ENVIRONMENT:
+    provider_client = provider if provider is not None else RazorpayProvider.from_settings()
+    if provider_client.environment != TEST_ENVIRONMENT:
         raise ConflictError("Only Razorpay Test Mode reconciliation is allowed")
     if attempt is None:
         raise ConflictError("No persisted payment-link attempt is available for reconciliation")
-    if provider.account_id != attempt.provider_account_id:
+    if provider_client.account_id != attempt.provider_account_id:
         raise ConflictError("Razorpay provider identity does not match the frozen payment intent")
     if not attempt.provider_link_id:
-        lookup = getattr(provider, "list_payment_links", None)
+        lookup = getattr(provider_client, "list_payment_links", None)
         candidates = lookup(reference_id=attempt.reference_id) if callable(lookup) else []
         matches = [
-            item for item in candidates
+            item
+            for item in candidates
             if str(item.get("reference_id") or "").strip() == attempt.reference_id
             and item.get("amount") == attempt.amount_minor
             and str(item.get("currency") or "").upper() == attempt.currency
@@ -577,18 +861,40 @@ def reconcile_payment_request(session: Session, context: TrustedContext, *, paym
                 raise ConflictError("Provider returned a payment link without an identity")
         else:
             attempt.status = "UNKNOWN_OUTCOME"
-            _transition(payment, PaymentStatus.REVIEW_REQUIRED, reason="provider_link_not_found_is_not_proof_of_absence")
+            _transition(
+                payment,
+                PaymentStatus.REVIEW_REQUIRED,
+                reason="provider_link_not_found_is_not_proof_of_absence",
+            )
             raise ConflictError("Provider link was not found; outcome remains UNKNOWN_OUTCOME")
-    response = provider.fetch_payment_link(attempt.provider_link_id)
+    response = provider_client.fetch_payment_link(attempt.provider_link_id)
     payments = response.get("payments")
-    payment_entity = payments[0] if isinstance(payments, list) and payments and isinstance(payments[0], dict) else None
+    payment_entity = (
+        payments[0]
+        if isinstance(payments, list) and payments and isinstance(payments[0], dict)
+        else None
+    )
     payload_entity: dict[str, object] = {"payment_link": response}
     if payment_entity is not None:
         payload_entity["payment"] = payment_entity
     if response.get("order_id"):
         payload_entity["order"] = {"id": response.get("order_id")}
     status_value = str(response.get("status") or "").lower()
-    event = "payment_link.paid" if status_value == "paid" or int(response.get("amount_paid") or 0) == payment.total_minor else "payment_link.expired" if status_value == "expired" else "payment_link.cancelled" if status_value in {"cancelled", "canceled"} else "payment_link.reconciled"
+    raw_amount_paid = response.get("amount_paid")
+    amount_paid = (
+        raw_amount_paid
+        if isinstance(raw_amount_paid, int) and not isinstance(raw_amount_paid, bool)
+        else 0
+    )
+    event = (
+        "payment_link.paid"
+        if status_value == "paid" or amount_paid == payment.total_minor
+        else "payment_link.expired"
+        if status_value == "expired"
+        else "payment_link.cancelled"
+        if status_value in {"cancelled", "canceled"}
+        else "payment_link.reconciled"
+    )
     return observe_payment_event(
         session,
         provider_account_id=attempt.provider_account_id,
@@ -599,12 +905,23 @@ def reconcile_payment_request(session: Session, context: TrustedContext, *, paym
         signature_verified=True,
     )
 
-def schedule_payment_maintenance(session: Session, *, now: datetime | None = None, limit: int = 100) -> int:
+
+def schedule_payment_maintenance(
+    session: Session, *, now: datetime | None = None, limit: int = 100
+) -> int:
     """Queue bounded pending and recent-paid reconciliation work."""
     current = now or utc_now()
     payments = session.scalars(
         select(PaymentRequest)
-        .where(PaymentRequest.status.in_((PaymentStatus.PENDING.value, PaymentStatus.REVIEW_REQUIRED.value, PaymentStatus.PAID.value)))
+        .where(
+            PaymentRequest.status.in_(
+                (
+                    PaymentStatus.PENDING.value,
+                    PaymentStatus.REVIEW_REQUIRED.value,
+                    PaymentStatus.PAID.value,
+                )
+            )
+        )
         .order_by(PaymentRequest.updated_at, PaymentRequest.id)
         .limit(limit)
     ).all()
@@ -612,13 +929,22 @@ def schedule_payment_maintenance(session: Session, *, now: datetime | None = Non
     for payment in payments:
         attempt = session.scalar(
             select(PaymentLinkAttempt)
-            .where(PaymentLinkAttempt.payment_request_id == payment.id, PaymentLinkAttempt.provider_link_id.is_not(None))
+            .where(
+                PaymentLinkAttempt.payment_request_id == payment.id,
+                PaymentLinkAttempt.provider_link_id.is_not(None),
+            )
             .order_by(PaymentLinkAttempt.attempt_number.desc())
         )
         if attempt is None:
             continue
-        interval = timedelta(days=1) if payment.status == PaymentStatus.PAID.value else timedelta(minutes=15)
-        if payment.status == PaymentStatus.PAID.value and (payment.paid_at is None or payment.paid_at < current - timedelta(days=30)):
+        interval = (
+            timedelta(days=1)
+            if payment.status == PaymentStatus.PAID.value
+            else timedelta(minutes=15)
+        )
+        if payment.status == PaymentStatus.PAID.value and (
+            payment.paid_at is None or payment.paid_at < current - timedelta(days=30)
+        ):
             continue
         last_observation = session.scalar(
             select(PaymentObservation.created_at)
@@ -635,21 +961,34 @@ def schedule_payment_maintenance(session: Session, *, now: datetime | None = Non
                 Job.state.in_(("QUEUED", "RUNNING", "RETRY_WAIT")),
             )
         ).all()
-        if any(str(job.payload_ref.get("payment_request_id") or "") == str(payment.id) for job in pending):
+        if any(
+            str(job.payload_ref.get("payment_request_id") or "") == str(payment.id)
+            for job in pending
+        ):
             continue
         enqueue_job(
             session,
             tenant_id=payment.tenant_id,
             project_id=payment.project_id,
             kind="payment.reconcile",
-            payload_ref={"payment_request_id": str(payment.id), "mode": "daily" if payment.status == PaymentStatus.PAID.value else "pending"},
+            payload_ref={
+                "payment_request_id": str(payment.id),
+                "mode": "daily" if payment.status == PaymentStatus.PAID.value else "pending",
+            },
             correlation_id=uuid4(),
         )
         created += 1
     session.flush()
     return created
 
-def replace_payment_link(session: Session, context: TrustedContext, *, payment_request_id: UUID, expected_row_version: int) -> object:
+
+def replace_payment_link(
+    session: Session,
+    context: TrustedContext,
+    *,
+    payment_request_id: UUID,
+    expected_row_version: int,
+) -> tuple[ExternalAction, object | None]:
     """Prepare a bounded replacement only after authoritative old-link closure."""
     payment = _payment(session, context, payment_request_id, lock=True)
     if payment.row_version != expected_row_version:
@@ -663,7 +1002,9 @@ def replace_payment_link(session: Session, context: TrustedContext, *, payment_r
         .limit(1)
     )
     if latest is None or latest.status not in {"EXPIRED", "CANCELLED"}:
-        raise ConflictError("Reconcile the prior link to authoritative expiry or cancellation before replacement")
+        raise ConflictError(
+            "Reconcile the prior link to authoritative expiry or cancellation before replacement"
+        )
     if payment.status in {PaymentStatus.EXPIRED.value, PaymentStatus.CANCELLED.value}:
         _transition(payment, PaymentStatus.PENDING)
     return prepare_payment_link(session, context, payment_request_id=payment.id)

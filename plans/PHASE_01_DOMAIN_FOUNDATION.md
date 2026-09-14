@@ -1,7 +1,7 @@
 # Phase 01 — Identity, domain contracts and commercial primitives
 
-**Status:** In progress | **Required:** Yes | **Depends on:** Phase 00  
-**Owns:** R01 and foundation of R02/R07/R16; A04, A06, A16, A27  
+**Status:** In progress | **Required:** Yes | **Depends on:** Phase 00
+**Owns:** R01 and foundation of R02/R07/R16; A04, A06, A16, A27
 **References:** [Master](MASTER_PLAN.md), [TDD](../docs/TDD.md) §7, §20, §27–28, §46–48, §52–57, §67.
 
 ## Objective and boundary
@@ -21,9 +21,9 @@ Create a trusted, testable domain layer and authenticated project shell. Impleme
 - [x] P01-09 Build login/onboarding, preferences, client/contact and project screens with empty/error/version-conflict states. Project deletion initially marks disabled/pending cleanup and cancels eligibility for new work; complete cleanup in phase 08.
 - [x] P01-10 Add CI checks for shared schema generation, application build/type validation, migrations and domain invariants. Use the selected production database major for integration tests, with two tenants and two projects as baseline fixtures.
 
-## Implementation state — 8 September 2026
+## Implementation state — 14 September 2026
 
-All local implementation tasks except the cross-cutting remainder of P01-04 are complete. The us-east-1 foundation stack now provides deployed Cognito and encrypted storage/event/logging primitives. P01-04 currently covers Cognito verification, persisted tenant authorization, composite database ownership, verified-email onboarding and connector policy context. Its checkbox stays open until deployed worker/tool/cache/download/trace entry points exist and the same authorization matrix is observed there; the private database gate also remains open.
+All local implementation tasks except the cross-cutting remainder of P01-04 are complete. The us-east-1 foundation stack now provides deployed Cognito and encrypted storage/event/logging primitives. P01-04 currently covers Cognito verification, persisted tenant authorization, composite database ownership, verified-email onboarding and connector policy context. A deployed SRP/onboarding and cross-tenant client isolation observation is recorded; its checkbox stays open until worker/tool/cache/download/trace entry points and private database roles are observed under the same matrix.
 
 Evidence: [Phase 01 verification](../docs/implementation-evidence/phase-01-foundation.md) and [schema inventory](../docs/decisions/schema-table-inventory.md).
 

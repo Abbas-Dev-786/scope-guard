@@ -1,13 +1,15 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { clearAccessToken, saveAccessToken } from "@/lib/api";
 import { beginCognitoSignIn, cognitoIsConfigured } from "@/lib/cognito";
 
-export default function SignInPage() {
+function SignInContent() {
   const router = useRouter();
+  const query = useSearchParams();
+  const next = query.get("next") || "/onboarding";
   const [token, setToken] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -17,12 +19,12 @@ export default function SignInPage() {
   function save(event: FormEvent) {
     event.preventDefault();
     saveAccessToken(token.trim());
-    router.push("/onboarding");
+    router.push(next);
   }
 
   async function signIn() {
     setError("");
-    try { await beginCognitoSignIn(); }
+    try { sessionStorage.setItem("scopeguard_after_signin", next); await beginCognitoSignIn(); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to start sign-in"); }
   }
 
@@ -39,4 +41,7 @@ export default function SignInPage() {
     </form>}
     <p><Link href="/">Return to overview</Link></p>
   </>;
+}
+export default function SignInPage() {
+  return <Suspense fallback={<><p className="eyebrow muted">Authentication</p><h1>Loading sign-in…</h1></>}><SignInContent /></Suspense>;
 }

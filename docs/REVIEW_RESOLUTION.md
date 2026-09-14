@@ -115,9 +115,9 @@ All rows have status **Specified / not yet implementation-verified**. Provider e
 | Security, operations and acceptance specifications added | Completed at documentation level |
 | Static document structure, local links, numbering and cross-reference checks | Passed 7 September 2026: 36/79 consecutive sections, local links, balanced fences, two JSON examples, legacy-enum scan, R01–R18 and A01–A32 coverage; not application tests |
 | Pricing example arithmetic/bounds check | Three decimal arithmetic examples and INR/paise conversion checked with PowerShell/.NET on 7 September 2026. Python is unavailable, so the Python snippet and its error/bounds paths remain unexecuted; no provider integration proof |
-| Application implementation / migrations / OpenAPI schemas | Not present yet |
-| Actual OAuth/MCP/SES/Razorpay account readiness | Pending |
-| Deployed AgentCore/network/database/model path | Pending |
+| Application implementation / migrations / OpenAPI schemas | Implemented through Phase 07; full Python suite, OpenAPI generation, migration drift check, web typecheck/lint/build pass |
+| Actual OAuth/MCP/SES/Razorpay account readiness | Partial: SES sender/account and Razorpay Test Mode read accepted; Gmail live OAuth/send/watch, SES receipt, and ScopeGuard payment correlation remain pending |
+| Deployed AgentCore/network/database/model path | AgentCore runtime invocation, direct Bedrock invocation, staging API health/database check and protected-route 401 evidence verified; full private/clean-recreation trace remains pending |
 | A01–A32 executable acceptance and security results | Pending |
 | Restore and measured service levels | Pending |
 | Real-user pilot decisions | Pending; MVP remains synthetic Test Mode |

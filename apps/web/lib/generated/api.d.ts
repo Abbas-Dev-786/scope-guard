@@ -585,6 +585,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payment-requests/{payment_request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Payment Requests Route */
+        get: operations["payment_requests_route_api_v1_payment_requests__payment_request_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payment-requests/{payment_request_id}/create-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Payment Link Route */
+        post: operations["create_payment_link_route_api_v1_payment_requests__payment_request_id__create_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payment-requests/{payment_request_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Payment Route */
+        post: operations["reconcile_payment_route_api_v1_payment_requests__payment_request_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payment-requests/{payment_request_id}/replace-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace Payment Link Route */
+        post: operations["replace_payment_link_route_api_v1_payment_requests__payment_request_id__replace_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/preferences": {
         parameters: {
             query?: never;
@@ -720,6 +788,23 @@ export interface paths {
         get: operations["get_request_route_api_v1_requests__request_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/requests/{request_id}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Request Route */
+        post: operations["analyze_request_route_api_v1_requests__request_id__analyze_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -958,6 +1043,23 @@ export interface paths {
         put?: never;
         /** Gmail Push Webhook */
         post: operations["gmail_push_webhook_webhooks_gmail_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/razorpay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Razorpay Webhook */
+        post: operations["razorpay_webhook_webhooks_razorpay_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1271,6 +1373,10 @@ export interface components {
              * Format: uuid
              */
             change_order_id: string;
+            /** Payment Link Status */
+            payment_link_status?: string | null;
+            /** Payment Link Url */
+            payment_link_url?: string | null;
             /** Payment Request Id */
             payment_request_id: string | null;
             /** Payment Status */
@@ -1298,6 +1404,8 @@ export interface components {
             change_order_id: string;
             /** Client Explanation */
             client_explanation: string;
+            /** Content Hash */
+            content_hash: string;
             /** Deliverables */
             deliverables: string[];
             /** Exclusions */
@@ -1320,6 +1428,8 @@ export interface components {
             revision_id: string;
             /** Revision Number */
             revision_number: number;
+            /** Row Version */
+            row_version: number;
             /** Status */
             status: string;
             /** Subject */
@@ -1653,6 +1763,58 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** PaymentLinkReplaceRequest */
+        PaymentLinkReplaceRequest: {
+            /** Expected Row Version */
+            expected_row_version: number;
+        };
+        /** PaymentRequestRead */
+        PaymentRequestRead: {
+            /**
+             * Accepted Revision Id
+             * Format: uuid
+             */
+            accepted_revision_id: string;
+            /**
+             * Collected Minor
+             * @default 0
+             */
+            collected_minor: number;
+            /** Currency */
+            currency: string;
+            /** Due At */
+            due_at: string | null;
+            /** Expire At */
+            expire_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Paid At */
+            paid_at: string | null;
+            /** Payment Link Status */
+            payment_link_status?: string | null;
+            /** Payment Link Url */
+            payment_link_url?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Provider Link Id */
+            provider_link_id?: string | null;
+            /** Row Version */
+            row_version: number;
+            /** Status */
+            status: string;
+            /** Tax Minor */
+            tax_minor: number;
+            /** Total Minor */
+            total_minor: number;
+        };
         /** PreferenceRead */
         PreferenceRead: {
             /** Communication Style */
@@ -1950,6 +2112,11 @@ export interface components {
             evidence: {
                 [key: string]: unknown;
             }[];
+            /**
+             * External Event Id
+             * Format: uuid
+             */
+            external_event_id: string;
             /**
              * Id
              * Format: uuid
@@ -3505,6 +3672,149 @@ export interface operations {
             };
         };
     };
+    payment_requests_route_api_v1_payment_requests__payment_request_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-request-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                payment_request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_payment_link_route_api_v1_payment_requests__payment_request_id__create_link_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "x-request-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                payment_request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_payment_route_api_v1_payment_requests__payment_request_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "x-request-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                payment_request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_payment_link_route_api_v1_payment_requests__payment_request_id__replace_link_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "x-request-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                payment_request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentLinkReplaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preferences_api_v1_preferences_get: {
         parameters: {
             query?: never;
@@ -3960,6 +4270,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RequestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_request_route_api_v1_requests__request_id__analyze_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "x-request-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
                 };
             };
             /** @description Validation Error */
@@ -4440,6 +4785,40 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    razorpay_webhook_webhooks_razorpay_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Razorpay-Signature"?: string | null;
+                "X-Razorpay-Event-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

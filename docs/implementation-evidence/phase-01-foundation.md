@@ -1,7 +1,7 @@
 # Phase 01 foundation verification
 
-**Observed:** 8 September 2026  
-**Environment:** local synthetic fixtures; PostgreSQL 16.6 constraint tests; AWS us-east-1 foundation stack  
+**Observed:** 8 September 2026
+**Environment:** local synthetic fixtures; PostgreSQL 16.6 constraint tests; AWS us-east-1 foundation stack
 **Status:** Domain foundation and AWS security foundation deployed; private database and runtime identity gates remain open
 
 ## Implemented evidence
@@ -40,3 +40,8 @@ local auth dependency chain                           missing 401; wrong 401; va
 ## Gate still open
 
 Actual Cognito tokens and hosted callback behavior have not been observed against a deployed user pool. Private Aurora/RDS Proxy connectivity, deployed worker/tool/cache/download/trace authorization, immutable database roles under deployed identities, and all later feature-resource authorization matrices remain unverified. A04 and A16 therefore stay cross-cutting and are not marked fully passed.
+## Deployed Cognito and tenant-isolation observation — 14 September 2026
+
+A controlled SRP test against Cognito pool `us-east-1_B14OYNOU6` authenticated two temporary users. Both completed `/api/v1/onboarding` with HTTP 201. User A created a client with HTTP 201 and read it with HTTP 200; User B received HTTP 404 when reading User A's client and HTTP 200 for User B's own client list. The temporary users were deleted after the observation. No tokens, passwords, or email contents were retained.
+
+This proves the deployed server-derived identity and one cross-tenant resource boundary. P01-04 remains open for the complete worker/tool/download/cache/trace authorization matrix and private deployed database-role evidence.

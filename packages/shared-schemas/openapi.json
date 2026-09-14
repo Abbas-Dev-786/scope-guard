@@ -654,6 +654,28 @@
             "title": "Change Order Id",
             "type": "string"
           },
+          "payment_link_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Link Status"
+          },
+          "payment_link_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Link Url"
+          },
           "payment_request_id": {
             "anyOf": [
               {
@@ -731,6 +753,11 @@
             "title": "Client Explanation",
             "type": "string"
           },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
           "deliverables": {
             "items": {
               "type": "string"
@@ -771,6 +798,11 @@
             "title": "Revision Number",
             "type": "integer"
           },
+          "row_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -790,6 +822,8 @@
           }
         },
         "required": [
+          "row_version",
+          "content_hash",
           "change_order_id",
           "revision_id",
           "revision_number",
@@ -1713,6 +1747,162 @@
         "title": "Page[ProjectRead]",
         "type": "object"
       },
+      "PaymentLinkReplaceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "PaymentLinkReplaceRequest",
+        "type": "object"
+      },
+      "PaymentRequestRead": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_revision_id": {
+            "format": "uuid",
+            "title": "Accepted Revision Id",
+            "type": "string"
+          },
+          "collected_minor": {
+            "default": 0,
+            "title": "Collected Minor",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "expire_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expire At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "payment_link_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Link Status"
+          },
+          "payment_link_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Link Url"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "provider_link_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Link Id"
+          },
+          "row_version": {
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tax_minor": {
+            "title": "Tax Minor",
+            "type": "integer"
+          },
+          "total_minor": {
+            "title": "Total Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "accepted_revision_id",
+          "total_minor",
+          "tax_minor",
+          "currency",
+          "status",
+          "due_at",
+          "expire_at",
+          "paid_at",
+          "row_version"
+        ],
+        "title": "PaymentRequestRead",
+        "type": "object"
+      },
       "PreferenceRead": {
         "additionalProperties": false,
         "properties": {
@@ -2499,6 +2689,11 @@
             "title": "Evidence",
             "type": "array"
           },
+          "external_event_id": {
+            "format": "uuid",
+            "title": "External Event Id",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2527,6 +2722,7 @@
         },
         "required": [
           "id",
+          "external_event_id",
           "status",
           "precedence",
           "candidate_projects",
@@ -6239,6 +6435,349 @@
         ]
       }
     },
+    "/api/v1/payment-requests/{payment_request_id}": {
+      "get": {
+        "operationId": "payment_requests_route_api_v1_payment_requests__payment_request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payment Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Payment Requests Route",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payment-requests/{payment_request_id}/create-link": {
+      "post": {
+        "operationId": "create_payment_link_route_api_v1_payment_requests__payment_request_id__create_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payment Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Payment Link Route",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payment-requests/{payment_request_id}/reconcile": {
+      "post": {
+        "operationId": "reconcile_payment_route_api_v1_payment_requests__payment_request_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payment Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconcile Payment Route",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payment-requests/{payment_request_id}/replace-link": {
+      "post": {
+        "operationId": "replace_payment_link_route_api_v1_payment_requests__payment_request_id__replace_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Payment Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentLinkReplaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Payment Link Route",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
     "/api/v1/preferences": {
       "get": {
         "operationId": "preferences_api_v1_preferences_get",
@@ -7312,6 +7851,92 @@
         ]
       }
     },
+    "/api/v1/requests/{request_id}/analyze": {
+      "post": {
+        "operationId": "analyze_request_route_api_v1_requests__request_id__analyze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-request-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze Request Route",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
     "/api/v1/requests/{request_id}/clarify": {
       "post": {
         "operationId": "clarify_request_route_api_v1_requests__request_id__clarify_post",
@@ -8244,6 +8869,73 @@
         "summary": "Gmail Push Webhook",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/webhooks/razorpay": {
+      "post": {
+        "operationId": "razorpay_webhook_webhooks_razorpay_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Razorpay-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Razorpay-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Razorpay-Event-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Razorpay-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Razorpay Webhook Webhooks Razorpay Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Razorpay Webhook",
+        "tags": [
+          "payments"
         ]
       }
     }

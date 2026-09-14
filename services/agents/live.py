@@ -12,7 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from services.agents.costs import ModelPrice, ReviewedModelPrices
 from services.agents.limits import AnalysisLimits
+from services.agents.persistence import (
+    create_workflow,
+    reconcile_analysis_budget,
+    reserve_analysis_budget,
+    reserve_deployment_budget,
+)
 from services.agents.schemas import (
     ChangeOrderRoleOutput,
     CommunicationRoleOutput,
@@ -26,6 +33,7 @@ from services.contracts.evidence import add_evidence_reference, create_evidence_
 from services.domain.auth import TrustedContext
 from services.domain.errors import ConflictError, NotFoundError
 from services.domain.models import (
+    AnalysisBudgetReservation,
     ClientContact,
     DocumentChunk,
     Job,
@@ -61,6 +69,17 @@ class LiveImpactOutput(BaseModel):
     uncertainty: str
     cold_start: bool = True
 
+
+@dataclass(frozen=True, slots=True)
+class LiveBudgetReservation:
+    tenant_reservation_id: UUID
+    deployment_reservation_id: UUID
+    model_prices: ReviewedModelPrices
+    model_id: str
+    reserved_tokens: int
+    reserved_cost_minor: int
+
+
 @dataclass(frozen=True, slots=True)
 class LiveAnalysisInput:
     context: TrustedContext
@@ -88,8 +107,11 @@ def _bounded_hours(low: str, recommended: str, high: str) -> tuple[str, str, str
         low_value, recommended_value, high_value = Decimal("1"), Decimal("1"), Decimal("1")
     high_value = min(high_value, low_value * Decimal("2"))
     recommended_value = min(max(recommended_value, low_value), high_value)
-    return tuple(format(value.normalize(), "f") for value in (low_value, recommended_value, high_value))
-
+    return (
+        format(low_value.normalize(), "f"),
+        format(recommended_value.normalize(), "f"),
+        format(high_value.normalize(), "f"),
+    )
 
 
 def _dedupe_evidence(output: EvidenceRoleOutput) -> EvidenceRoleOutput:
@@ -108,22 +130,31 @@ def _dedupe_evidence(output: EvidenceRoleOutput) -> EvidenceRoleOutput:
             contradiction_ids.add(item.reference_id)
     if contradiction_ids:
         supporting = [item for item in supporting if item.reference_id not in contradiction_ids]
-    return output.model_copy(update={"supporting_references": supporting, "contradictory_references": contradictory})
+    return output.model_copy(
+        update={"supporting_references": supporting, "contradictory_references": contradictory}
+    )
+
 
 def _normalize_impact(output: LiveImpactOutput) -> ImpactRoleOutput:
-    low, recommended, high = _bounded_hours(output.low_hours, output.recommended_hours, output.high_hours)
+    low, recommended, high = _bounded_hours(
+        output.low_hours, output.recommended_hours, output.high_hours
+    )
     tasks = []
     for task in output.tasks:
-        task_low, task_recommended, task_high = _bounded_hours(task.low_hours, task.recommended_hours, task.high_hours)
-        tasks.append({
-            "task_key": task.task_key,
-            "description": task.description,
-            "low_hours": task_low,
-            "recommended_hours": task_recommended,
-            "high_hours": task_high,
-            "assumptions": task.assumptions,
-            "dependencies": task.dependencies,
-        })
+        task_low, task_recommended, task_high = _bounded_hours(
+            task.low_hours, task.recommended_hours, task.high_hours
+        )
+        tasks.append(
+            {
+                "task_key": task.task_key,
+                "description": task.description,
+                "low_hours": task_low,
+                "recommended_hours": task_recommended,
+                "high_hours": task_high,
+                "assumptions": task.assumptions,
+                "dependencies": task.dependencies,
+            }
+        )
     assumptions = list(output.assumptions)
     if output.cold_start and not any("history" in item.lower() for item in assumptions):
         assumptions.append("No verified history of historical duration is available.")
@@ -135,9 +166,12 @@ def _normalize_impact(output: LiveImpactOutput) -> ImpactRoleOutput:
         assumptions=assumptions,
         dependencies=output.dependencies,
         missing_information=output.missing_information,
-        uncertainty=output.uncertainty.upper() if output.uncertainty.upper() in {"LOW", "MEDIUM", "HIGH"} else "MEDIUM",
+        uncertainty=output.uncertainty.upper()
+        if output.uncertainty.upper() in {"LOW", "MEDIUM", "HIGH"}
+        else "MEDIUM",
         cold_start=output.cold_start,
     )
+
 
 def prepare_live_analysis_input(session: Session, job: Job) -> LiveAnalysisInput:
     request_id = UUID(str(job.payload_ref["request_id"]))
@@ -209,7 +243,9 @@ def prepare_live_analysis_input(session: Session, job: Job) -> LiveAnalysisInput
     evidence: list[dict[str, str]] = []
     scope_items: list[dict[str, str]] = []
     for item in items:
-        scope_items.append({"id": str(item.id), "type": item.item_type, "key": item.item_key, "text": item.text})
+        scope_items.append(
+            {"id": str(item.id), "type": item.item_type, "key": item.item_key, "text": item.text}
+        )
         if item.source_document_chunk_id is None:
             continue
         chunk = session.scalar(
@@ -239,11 +275,13 @@ def prepare_live_analysis_input(session: Session, job: Job) -> LiveAnalysisInput
             access_scope=f"tenant:{job.tenant_id}:project:{project.id}",
             relation="SUPPORTS",
         )
-        evidence.append({
-            "reference_id": str(reference.id),
-            "scope_item_id": str(item.id),
-            "excerpt": chunk.source_text[:800],
-        })
+        evidence.append(
+            {
+                "reference_id": str(reference.id),
+                "scope_item_id": str(item.id),
+                "excerpt": chunk.source_text[:800],
+            }
+        )
     if not evidence:
         raise ConflictError("Confirmed scope has no reproducible contract evidence")
     snapshot: dict[str, object] = {
@@ -268,14 +306,18 @@ def prepare_live_analysis_input(session: Session, job: Job) -> LiveAnalysisInput
     )
 
 
-async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
+async def invoke_live_strands_analysis(
+    inputs: LiveAnalysisInput,
+    *,
+    limits: AnalysisLimits | None = None,
+) -> tuple[
     ScopeRoleOutput,
     EvidenceRoleOutput,
     ImpactRoleOutput,
     ChangeOrderRoleOutput,
     CommunicationRoleOutput,
 ]:
-    limits = AnalysisLimits()
+    limits = limits or AnalysisLimits()
     limits.start_attempt()
     roles = build_strands_roles()
     request_summary = str(inputs.input_snapshot["request_summary"])
@@ -289,7 +331,9 @@ async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
         f"REQUEST: {request_summary}\nCONFIRMED_SCOPE: {scope_context}"
     )
     preliminary = (
-        await roles["scope"].invoke(scope_prompt, ScopeRoleOutput, limits=limits, repair_prompt=scope_prompt)
+        await roles["scope"].invoke(
+            scope_prompt, ScopeRoleOutput, limits=limits, repair_prompt=scope_prompt
+        )
     ).structured_output
 
     evidence_prompt = (
@@ -300,7 +344,9 @@ async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
         f"ALLOWED_EVIDENCE: {evidence_context}"
     )
     evidence = (
-        await roles["evidence"].invoke(evidence_prompt, EvidenceRoleOutput, limits=limits, repair_prompt=evidence_prompt)
+        await roles["evidence"].invoke(
+            evidence_prompt, EvidenceRoleOutput, limits=limits, repair_prompt=evidence_prompt
+        )
     ).structured_output
     evidence = _dedupe_evidence(cast(EvidenceRoleOutput, evidence))
 
@@ -311,10 +357,11 @@ async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
         f"REQUEST: {request_summary}\nSCOPE: {scope_context}\nEVIDENCE: {evidence.model_dump_json()}"
     )
     impact = (
-        await roles["impact"].invoke(impact_prompt, LiveImpactOutput, limits=limits, repair_prompt=impact_prompt)
+        await roles["impact"].invoke(
+            impact_prompt, LiveImpactOutput, limits=limits, repair_prompt=impact_prompt
+        )
     ).structured_output
     impact = _normalize_impact(cast(LiveImpactOutput, impact))
-
 
     change_prompt = (
         "Draft a concise factual change order from the validated request, evidence, and impact. "
@@ -322,7 +369,9 @@ async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
         f"REQUEST: {request_summary}\nIMPACT: {impact.model_dump_json()}\nEVIDENCE: {evidence.model_dump_json()}"
     )
     change_order = (
-        await roles["change_order"].invoke(change_prompt, ChangeOrderRoleOutput, limits=limits, repair_prompt=change_prompt)
+        await roles["change_order"].invoke(
+            change_prompt, ChangeOrderRoleOutput, limits=limits, repair_prompt=change_prompt
+        )
     ).structured_output
 
     communication_prompt = (
@@ -341,8 +390,8 @@ async def invoke_live_strands_analysis(inputs: LiveAnalysisInput) -> tuple[
     ).structured_output
     return (
         cast(ScopeRoleOutput, preliminary),
-        cast(EvidenceRoleOutput, evidence),
-        cast(ImpactRoleOutput, impact),
+        evidence,
+        impact,
         cast(ChangeOrderRoleOutput, change_order),
         cast(CommunicationRoleOutput, communication),
     )
@@ -376,9 +425,124 @@ def persist_live_analysis(
     )
 
 
-def execute_live_analysis_job(*, job_id: UUID, worker_id: str, fencing_generation: int) -> AnalysisResult:
+def _reserve_live_budgets(
+    session: Session,
+    inputs: LiveAnalysisInput,
+    job: Job,
+) -> LiveBudgetReservation:
+    from services.api.config import get_settings
+
+    settings = get_settings()
+    if (
+        settings.max_model_cost_minor_per_day <= 0
+        or not settings.model_price_version
+        or settings.model_price_reviewed_at is None
+        or settings.model_input_price_minor_per_1k <= 0
+        or settings.model_output_price_minor_per_1k <= 0
+    ):
+        raise ConflictError("Reviewed model prices and a positive cost ceiling are required")
+    prices = ReviewedModelPrices(
+        version=settings.model_price_version,
+        reviewed_at=settings.model_price_reviewed_at,
+        max_age_days=settings.model_price_max_age_days,
+        prices={
+            settings.bedrock_model_id: ModelPrice(
+                settings.model_input_price_minor_per_1k,
+                settings.model_output_price_minor_per_1k,
+            )
+        },
+    )
+    reserved_tokens = 48_000
+    reserved_cost_minor = prices.cost_minor(
+        settings.bedrock_model_id,
+        input_tokens=40_000,
+        output_tokens=8_000,
+    )
+    if reserved_cost_minor > settings.max_model_cost_minor_per_day:
+        raise ConflictError("One bounded analysis exceeds the configured daily cost ceiling")
+    workflow = create_workflow(
+        session,
+        inputs.context,
+        workflow_key=f"request:{inputs.request_id}:v{inputs.request_version}",
+        project_id=inputs.project_id,
+        request_id=inputs.request_id,
+        scope_version_id=UUID(str(inputs.input_snapshot["scope_version_id"])),
+        input_snapshot=inputs.input_snapshot,
+        policy_version="analysis-policy-v1-live-strands",
+    )
+    reservation_prefix = f"analysis:{job.id}:attempt:{job.attempt_count}"
+    tenant = reserve_analysis_budget(
+        session,
+        inputs.context,
+        workflow_id=workflow.id,
+        reservation_key=f"{reservation_prefix}:tenant",
+        token_amount=reserved_tokens,
+        cost_amount_minor=reserved_cost_minor,
+        token_limit=settings.tenant_token_limit_per_day,
+        cost_limit_minor=settings.max_model_cost_minor_per_day,
+    )
+    deployment = reserve_deployment_budget(
+        session,
+        inputs.context,
+        workflow_id=workflow.id,
+        reservation_key=f"{reservation_prefix}:deployment",
+        token_amount=reserved_tokens,
+        cost_amount_minor=reserved_cost_minor,
+        token_limit=settings.deployment_token_limit_per_day,
+        cost_limit_minor=settings.max_model_cost_minor_per_day,
+    )
+    return LiveBudgetReservation(
+        tenant.reservation.id,
+        deployment.reservation.id,
+        prices,
+        settings.bedrock_model_id,
+        reserved_tokens,
+        reserved_cost_minor,
+    )
+
+
+def _settle_live_budgets(
+    session: Session,
+    inputs: LiveAnalysisInput,
+    budget: LiveBudgetReservation,
+    limits: AnalysisLimits,
+    *,
+    conservative: bool,
+) -> None:
+    usage = limits.snapshot()
+    token_used = budget.reserved_tokens if conservative else usage.total_tokens
+    cost_used_minor = (
+        budget.reserved_cost_minor
+        if conservative
+        else budget.model_prices.cost_minor(
+            budget.model_id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+        )
+    )
+    for reservation_id in (
+        budget.tenant_reservation_id,
+        budget.deployment_reservation_id,
+    ):
+        reservation = session.get(AnalysisBudgetReservation, reservation_id, with_for_update=True)
+        if reservation is not None and reservation.status == "RESERVED":
+            reconcile_analysis_budget(
+                session,
+                inputs.context,
+                reservation_id=reservation.id,
+                token_used=token_used,
+                cost_used_minor=cost_used_minor,
+            )
+
+
+def execute_live_analysis_job(
+    *, job_id: UUID, worker_id: str, fencing_generation: int
+) -> AnalysisResult:
     from services.api.database import SessionLocal
 
+    budget: LiveBudgetReservation | None = None
+    inputs: LiveAnalysisInput | None = None
+    limits = AnalysisLimits()
     try:
         with SessionLocal() as session:
             job = session.get(Job, job_id, with_for_update=True)
@@ -388,14 +552,23 @@ def execute_live_analysis_job(*, job_id: UUID, worker_id: str, fencing_generatio
                 raise ConflictError("Analysis job lease is stale")
             job.lease_until = datetime.now(UTC) + timedelta(minutes=4)
             inputs = prepare_live_analysis_input(session, job)
+            budget = _reserve_live_budgets(session, inputs, job)
             session.commit()
 
-        outputs = asyncio.run(invoke_live_strands_analysis(inputs))
+        outputs = asyncio.run(invoke_live_strands_analysis(inputs, limits=limits))
 
         with SessionLocal() as session:
             job = session.get(Job, job_id, with_for_update=True)
-            if job is None or job.state != "RUNNING" or job.lease_owner != worker_id or job.fencing_generation != fencing_generation:
+            if (
+                job is None
+                or job.state != "RUNNING"
+                or job.lease_owner != worker_id
+                or job.fencing_generation != fencing_generation
+            ):
                 raise ConflictError("Analysis job lease is stale")
+            if budget is None:
+                raise ConflictError("Analysis budget reservation is unavailable")
+            _settle_live_budgets(session, inputs, budget, limits, conservative=False)
             result = persist_live_analysis(session, inputs, outputs)
             complete_job(
                 session,
@@ -408,8 +581,15 @@ def execute_live_analysis_job(*, job_id: UUID, worker_id: str, fencing_generatio
     except Exception as exc:
         print(f"live_analysis_error {type(exc).__name__}: {str(exc)[:500]}")
         with SessionLocal() as session:
+            if budget is not None and inputs is not None:
+                _settle_live_budgets(session, inputs, budget, limits, conservative=True)
             job = session.get(Job, job_id, with_for_update=True)
-            if job is not None and job.state == "RUNNING" and job.lease_owner == worker_id and job.fencing_generation == fencing_generation:
+            if (
+                job is not None
+                and job.state == "RUNNING"
+                and job.lease_owner == worker_id
+                and job.fencing_generation == fencing_generation
+            ):
                 fail_job(
                     session,
                     job_id=job.id,

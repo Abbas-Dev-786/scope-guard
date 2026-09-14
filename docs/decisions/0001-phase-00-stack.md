@@ -23,3 +23,6 @@ The documentation confirms that Next.js 16 requires Node 20.9 or newer; uv uses 
 The API remains portable between local PostgreSQL and the target Aurora major, but PostgreSQL-specific migration tests are mandatory. Synchronous database access is bounded by small pools and short transactions. Model/provider calls must never occur inside those transactions.
 
 The cloud readiness gate stays open until actual identities, accounts, regions and provider behavior are observed. Changing a pinned major or deployment path updates this record and invalidates affected evidence.
+## Region intersection verification — 14 September 2026
+
+Read-only AWS checks compared `ap-south-1` and `us-east-1`: `amazon.nova-lite-v1:0` is `ACTIVE` in both regions. Aurora PostgreSQL does not offer the local test version `16.6` as a standard managed engine version in either region; each exposes newer 16.x versions (including 16.8+). The deployed AgentCore and staging API/model path are in `us-east-1`, so that region is retained while the production Aurora major/version and private proxy path are explicitly pending. This prevents treating model availability alone as proof of the full runtime/model/database intersection.
